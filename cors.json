@@ -1,0 +1,11 @@
+[
+  {
+    "origin": [
+      "http://localhost:5000",
+      "https://jarbascustomrods.web.app",
+      "https://jarbascustomrods.firebaseapp.com"
+    ],
+    "method": ["GET", "PUT", "POST", "OPTIONS"],
+    "maxAgeSeconds": 3600
+  }
+]
