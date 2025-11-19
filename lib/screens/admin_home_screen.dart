@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'admin_components_screen.dart';
 import 'admin_quotes_screen.dart';
-
+import 'admin_settings_screen.dart'; // (NOVO) Importe a tela de configurações
 
 class AdminHomeScreen extends StatefulWidget {
   const AdminHomeScreen({super.key});
@@ -23,6 +23,23 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(_selectedIndex == 0 ? 'Gerenciar Componentes' : 'Gerenciar Orçamentos'),
+        // --- AÇÃO ADICIONADA ---
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings),
+            tooltip: 'Configurações Globais',
+            onPressed: () {
+              // Navega para a tela de configurações de margem
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const AdminSettingsScreen(),
+                ),
+              );
+            },
+          ),
+        ],
+        // -----------------------
       ),
       body: IndexedStack(
         index: _selectedIndex,

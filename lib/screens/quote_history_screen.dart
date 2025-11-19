@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../../models/quote_model.dart';
 import '../../services/quote_service.dart';
 import '../../services/auth_service.dart';
-import 'quote_detail_screen.dart'; // Para navegar para os detalhes
+import 'quote_detail_screen.dart'; 
 
 class QuoteHistoryScreen extends StatefulWidget {
   const QuoteHistoryScreen({super.key});
@@ -21,7 +21,6 @@ class _QuoteHistoryScreenState extends State<QuoteHistoryScreen> {
     super.initState();
     final user = _authService.currentUser;
     if (user != null) {
-      // Busca apenas os orçamentos deste usuário
       _quotesStream = _quoteService.getQuotesStream(user.uid);
     }
   }
@@ -30,7 +29,7 @@ class _QuoteHistoryScreenState extends State<QuoteHistoryScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Meus Orçamentos'),
+        title: const Text('Meus Rascunhos'),
       ),
       body: _quotesStream == null
           ? const Center(child: Text('Erro ao carregar usuário.'))
@@ -44,12 +43,19 @@ class _QuoteHistoryScreenState extends State<QuoteHistoryScreen> {
                   return Center(child: Text('Erro: ${snapshot.error}'));
                 }
                 if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                  return const Center(
-                      child: Text('Você ainda não criou nenhum orçamento.'));
+                  return const Center(child: Text('Nenhum rascunho encontrado.'));
                 }
 
-                List<Quote> quotes = snapshot.data!;
-                // Ordena no cliente para exibir os mais novos primeiro
+                List<Quote> allQuotes = snapshot.data!;
+
+                // --- FILTRO: APENAS RASCUNHOS ---
+                final quotes = allQuotes.where((q) => q.status == 'rascunho').toList();
+
+                if (quotes.isEmpty) {
+                   return const Center(child: Text('Nenhum rascunho pendente.'));
+                }
+
+                // Ordena por data
                 quotes.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
                 return ListView.builder(
@@ -73,47 +79,31 @@ class _QuoteHistoryScreenState extends State<QuoteHistoryScreen> {
       color: const Color(0xFF2C2C2C),
       margin: const EdgeInsets.only(bottom: 12.0),
       child: ListTile(
-        title: Text('Orçamento - $formattedDate',
-            style: const TextStyle(fontWeight: FontWeight.bold)),
+        title: Text('Rascunho - $formattedDate',
+            style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
         subtitle: Text(
           'Status: ${quote.status.toUpperCase()}',
           style: TextStyle(
-            color: _getStatusColor(quote.status),
+            color: Colors.grey[400], // Cor neutra para rascunho
             fontWeight: FontWeight.bold,
           ),
         ),
-        
-        // --- CORREÇÃO AQUI (Removendo o Preço) ---
-        // Em vez de mostrar o preço, mostramos um ícone para indicar
-        // que o usuário pode clicar para ver os detalhes.
         trailing: Icon(
-          Icons.chevron_right,
-          color: Colors.grey[600],
+          Icons.edit, // Ícone de edição para indicar que é um rascunho
+          color: Colors.grey[500],
         ),
-        // --- FIM DA CORREÇÃO ---
-
         onTap: () {
           Navigator.push(
             context,
             MaterialPageRoute(
+              // Nota: Se for admin, pode querer redirecionar para o AdminQuoteDetailScreen 
+              // para ter poder de edição total, ou manter o QuoteDetailScreen se for apenas visualização.
+              // Como é "Meus Rascunhos", geralmente queremos editar.
               builder: (context) => QuoteDetailScreen(quote: quote),
             ),
           );
         },
       ),
     );
-  }
-
-  // Funções de cor (incluindo o novo status 'pendente')
-  Color _getStatusColor(String status) {
-    switch (status) {
-      case 'pendente': return Colors.yellow[300]!;
-      case 'rascunho': return Colors.grey[400]!;
-      case 'enviado': return Colors.blue[300]!;
-      case 'aprovado': return Colors.green[300]!;
-      case 'producao': return Colors.orange[300]!;
-      case 'concluido': return Colors.purple[200]!;
-      default: return Colors.white;
-    }
   }
 }

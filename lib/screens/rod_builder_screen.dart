@@ -30,7 +30,9 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<RodBuilderProvider>().clearBuild();
+      final provider = context.read<RodBuilderProvider>();
+      provider.clearBuild();
+      provider.fetchSettings(); // <--- ADICIONE ESTA LINHA
     });
     _isAdminFuture = _getAdminStatus();
   }
@@ -123,7 +125,7 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
     return Scaffold(
       // AppBar Limpa
       appBar: AppBar(
-        title: const Text('Montar Vara'),
+        title: const Text('Customizar'),
         centerTitle: true,
         elevation: 0,
         backgroundColor: Colors.white,
@@ -349,7 +351,10 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
           onQuantityChanged: (val) => provider.setPassadoresQuantity(val),
         );
       case 5:
-        return const CustomizationStep();
+        // --- ATUALIZAÇÃO AQUI ---
+        // Passamos o isAdmin para o widget
+        return CustomizationStep(isAdmin: isAdmin); 
+        
       case 6:
         return SummaryStep(isAdmin: isAdmin);
       default:

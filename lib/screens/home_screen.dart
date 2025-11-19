@@ -2,14 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart'; // Para o User
 import '../services/auth_service.dart';
 import '../services/user_service.dart'; // Para verificar o admin
+import '../services/whatsapp_service.dart';
 import 'catalog_screen.dart'; // Para o Catálogo
 import 'rod_builder_screen.dart'; // Para o Montador
 import 'quote_history_screen.dart'; // Para o Histórico (Admin)
-// import 'admin/components/admin_components_screen.dart'; // Não é mais necessário
 import 'admin_quotes_screen.dart'; // Para o Gerenciar Orçamentos (Admin)
-// --- (NOVA IMPORTAÇÃO) ---
+import 'admin_components_screen.dart';
+
 import 'admin_users_screen.dart'; // Para o Gerenciar Usuários (Admin)
-// --- FIM DA IMPORTAÇÃO ---
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -221,19 +221,138 @@ class _HomeScreenState extends State<HomeScreen> {
           );
         },
       ),
+
+      const SizedBox(height: 16),
+
+      // --- NOVO BOTÃO: Falar com Fornecedor ---
+      ElevatedButton.icon(
+        icon: const Icon(Icons.chat_outlined, color: Colors.white),
+        label: const Text('Falar com Fornecedor'),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFF25D366), // Verde WhatsApp
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 20),
+        ),
+        onPressed: () => _showDirectContactDialog(context), // Abre o formulário
+      ),
+
     ];
+  }
+
+  // --- MÉTODO PARA MOSTRAR O FORMULÁRIO DE CONTATO ---
+  void _showDirectContactDialog(BuildContext context) {
+    final formKey = GlobalKey<FormState>();
+    final nameController = TextEditingController();
+    final phoneController = TextEditingController();
+    final cityController = TextEditingController();
+    final stateController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Contato Rápido'),
+          content: SingleChildScrollView(
+            child: Form(
+              key: formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Informe seus dados para iniciarmos a conversa no WhatsApp:'),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: nameController,
+                    decoration: const InputDecoration(labelText: 'Nome', border: OutlineInputBorder()),
+                    validator: (v) => v == null || v.isEmpty ? 'Informe seu nome' : null,
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: phoneController,
+                    decoration: const InputDecoration(labelText: 'Telefone', border: OutlineInputBorder()),
+                    keyboardType: TextInputType.phone,
+                    validator: (v) => v == null || v.isEmpty ? 'Informe seu telefone' : null,
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        flex: 2,
+                        child: TextFormField(
+                          controller: cityController,
+                          decoration: const InputDecoration(labelText: 'Cidade', border: OutlineInputBorder()),
+                          validator: (v) => v == null || v.isEmpty ? 'Obrigatório' : null,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        flex: 1,
+                        child: TextFormField(
+                          controller: stateController,
+                          decoration: const InputDecoration(labelText: 'UF', border: OutlineInputBorder()),
+                          //maxLength: 2,
+                          textCapitalization: TextCapitalization.characters,
+                          validator: (v) => v == null || v.isEmpty ? 'Obrig.' : null,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
+            ),
+            ElevatedButton.icon(
+              icon: const Icon(Icons.send),
+              label: const Text('Iniciar Conversa'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF25D366),
+                foregroundColor: Colors.white,
+                // Aumentamos o padding e a fonte
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                elevation: 2,
+              ),
+              onPressed: () async {
+                if (formKey.currentState!.validate()) {
+                  // Fecha o diálogo primeiro
+                  Navigator.pop(context);
+                  
+                  try {
+                    await WhatsAppService.sendDirectContactRequest(
+                      clientName: nameController.text,
+                      clientPhone: phoneController.text,
+                      city: cityController.text,
+                      state: stateController.text,
+                    );
+                  } catch (e) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Erro ao abrir WhatsApp: $e'), backgroundColor: Colors.red),
+                      );
+                    }
+                  }
+                }
+              },
+            ),
+          ],
+        );
+      },
+    );
   }
 
   // Botões do Menu Admin
   List<Widget> _buildAdminMenu(BuildContext context) {
     return [
-
-      // Botão para o Montador (Admin usa para criar rascunhos)
+      // 1. Customizar (Rascunho)
       ElevatedButton.icon(
         icon: const Icon(Icons.add_circle_outline, color: Colors.white),
-        label: const Text('Customizar (Rascunho)'),
+        label: const Text('Customizar'),
         style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.blueGrey[500],
+          backgroundColor: Colors.blueGrey[600],
           foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(vertical: 20),
         ),
@@ -246,36 +365,17 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       const SizedBox(height: 16),
       
-      // Botão para o Histórico Pessoal (Meus Rascunhos)
-      ElevatedButton.icon(
-        icon: const Icon(Icons.bookmark_border),
-        label: const Text('Meus Rascunhos'),
-         style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFFFFFFFF), // Fundo branco
-          foregroundColor: Colors.blueGrey[800], // Texto escuro
-          side: BorderSide(color: Colors.grey[400]!), // Borda leve
-          padding: const EdgeInsets.symmetric(vertical: 20),
-        ),
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const QuoteHistoryScreen()),
-          );
-        },
-      ),
-      const SizedBox(height: 16),
-
-      // Botão para Gerenciar Orçamentos (Admin vê TODOS)
+      // 2. Gerenciar Orçamentos (Agora inclui tudo)
       ElevatedButton.icon(
         icon: const Icon(Icons.receipt_long_outlined),
         label: const Text('Gerenciar Orçamentos'),
         style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFFFFFFFF), // Fundo branco
-          foregroundColor: Colors.blueGrey[800], // Texto escuro
+          backgroundColor: const Color(0xFFFFFFFF),
+          foregroundColor: Colors.blueGrey[800],
+          side: BorderSide(color: Colors.grey[400]!),
           padding: const EdgeInsets.symmetric(vertical: 20),
         ),
         onPressed: () {
-          // Navega para a lista de orçamentos (onde o admin pode ver todos)
           Navigator.push(
             context,
             MaterialPageRoute(builder: (context) => const AdminQuotesScreen()),
@@ -284,28 +384,27 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       const SizedBox(height: 16),
 
-      // Botão para Gerenciar Catálogo (Admin)
+      // 4. Gerenciar Catálogo (Com a Engrenagem dentro)
       ElevatedButton.icon(
-        icon: const Icon(Icons.edit_note_outlined),
+        icon: const Icon(Icons.inventory_2_outlined),
         label: const Text('Gerenciar Catálogo'),
-         style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFFFFFFFF), // Fundo branco
-          foregroundColor: Colors.blueGrey[800], // Texto escuro
-          side: BorderSide(color: Colors.grey[400]!), // Borda leve
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.blueGrey[800],
+          foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(vertical: 20),
         ),
         onPressed: () {
-          // Vai para a tela de catálogo refatorada (onde o admin edita)
+          // Navega direto para a tela de componentes
           Navigator.push(
             context,
-            MaterialPageRoute(builder: (context) => const CatalogScreen()),
+            MaterialPageRoute(builder: (context) => const AdminComponentsScreen()),
           );
         },
       ),
-      const SizedBox(height: 16),
       
-      // --- (NOVO BOTÃO) ---
-      // Botão para Gerenciar Usuários (Admin)
+      // Mantive o botão de Usuários pois é vital para o sistema, 
+      // mas se quiser remover, basta apagar o bloco abaixo.
+      const SizedBox(height: 16),
       ElevatedButton.icon(
         icon: const Icon(Icons.manage_accounts_outlined, color: Colors.white),
         label: const Text('Gerenciar Usuários'),
@@ -321,8 +420,7 @@ class _HomeScreenState extends State<HomeScreen> {
           );
         },
       ),
-      const SizedBox(height: 16),
-      // --- FIM DO NOVO BOTÃO ---
     ];
   }
-}
+    
+  }

@@ -43,6 +43,16 @@
 </head>
 <body>
   <script>
+    // Hack para garantir que o input de arquivo receba o clique no Mobile
+    window.addEventListener('load', function(ev) {
+      // Permite que eventos de clique passem pelo Canvas do Flutter
+      let _flutter_canvas = document.querySelector("flt-glass-pane");
+      if (_flutter_canvas) {
+        _flutter_canvas.style.pointerEvents = "auto";
+      }
+    });
+  </script>
+  <script>
     window.addEventListener('load', function(ev) {
       // Download main.dart.js
       _flutter.loader.loadEntrypoint({

@@ -5,11 +5,12 @@ class Component {
   final String name;
   final String description;
   final String category;
-  final double price;
+  final double price;      // Preço de Venda
+  final double costPrice;  // (NOVO) Preço de Custo
   final int stock;
   final String imageUrl;
   final Map<String, dynamic> attributes;
-  final String? supplierLink; // Link do fornecedor
+  final String? supplierLink;
 
   Component({
     required this.id,
@@ -17,13 +18,13 @@ class Component {
     required this.description,
     required this.category,
     required this.price,
+    this.costPrice = 0.0, // (NOVO) Padrão 0
     required this.stock,
     required this.imageUrl,
     required this.attributes,
-    this.supplierLink, // Adicionado ao construtor
+    this.supplierLink,
   });
 
-  // Método 'factory' para criar um Component a partir de um DocumentSnapshot do Firestore
   factory Component.fromFirestore(DocumentSnapshot doc) {
     Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
 
@@ -33,24 +34,25 @@ class Component {
       description: data['description'] ?? '',
       category: data['category'] ?? '',
       price: (data['price'] ?? 0.0).toDouble(),
+      costPrice: (data['costPrice'] ?? 0.0).toDouble(), // (NOVO)
       stock: (data['stock'] ?? 0).toInt(),
       imageUrl: data['imageUrl'] ?? '',
       attributes: data['attributes'] ?? {},
-      supplierLink: data['supplierLink'], // Adicionado
+      supplierLink: data['supplierLink'],
     );
   }
 
-  // Método para converter um Component em um Map (útil para salvar dados no Firestore)
   Map<String, dynamic> toMap() {
     return {
       'name': name,
       'description': description,
       'category': category,
       'price': price,
+      'costPrice': costPrice, // (NOVO)
       'stock': stock,
       'imageUrl': imageUrl,
       'attributes': attributes,
-      'supplierLink': supplierLink, // Adicionado
+      'supplierLink': supplierLink,
     };
   }
 }

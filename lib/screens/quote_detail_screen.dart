@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../models/quote_model.dart';
+import '../../../models/component_model.dart';
 import '../../../services/quote_service.dart';
 import '../../../services/whatsapp_service.dart'; 
+import '../../../services/auth_service.dart'; // (NOVO)
+import '../../../services/user_service.dart'; // (NOVO)
+import '../widgets/admin_profit_report.dart'; // (NOVO)
 
 class QuoteDetailScreen extends StatefulWidget {
   final Quote quote;
@@ -15,15 +20,29 @@ class QuoteDetailScreen extends StatefulWidget {
 
 class _QuoteDetailScreenState extends State<QuoteDetailScreen> {
   final QuoteService _quoteService = QuoteService();
+  final AuthService _authService = AuthService();
+  final UserService _userService = UserService();
+
   bool _isLoading = false;
 
   // Usamos um objeto Quote local para refletir a mudança de status
   late Quote _currentQuote;
+  bool _isAdmin = false; // (NOVO)
 
   @override
   void initState() {
     super.initState();
     _currentQuote = widget.quote;
+    _checkAdmin(); // (NOVO)
+  }
+
+  // Verifica se é admin para mostrar o relatório
+  Future<void> _checkAdmin() async {
+    final user = _authService.currentUser;
+    if (user != null) {
+      final isAdmin = await _userService.isAdmin(user);
+      if (mounted) setState(() => _isAdmin = isAdmin);
+    }
   }
 
   // Ação de enviar o orçamento
@@ -78,6 +97,22 @@ class _QuoteDetailScreenState extends State<QuoteDetailScreen> {
     }
   }
 
+  // --- HELPER: Cria Componente Temporário a partir do Quote ---
+  Component? _createTempComponent(String? name, double? price, double? cost) {
+    if (name == null || name.isEmpty) return null;
+    return Component(
+      id: 'temp', 
+      name: name, 
+      description: '', 
+      category: '', 
+      price: price ?? 0.0, 
+      costPrice: cost ?? 0.0, // Usa o custo histórico salvo no quote
+      stock: 0, 
+      imageUrl: '', 
+      attributes: {}
+    );
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -96,28 +131,44 @@ class _QuoteDetailScreenState extends State<QuoteDetailScreen> {
 
             // Dados do Cliente
             Text('Seus Dados', style: Theme.of(context).textTheme.titleLarge),
-            _buildDetailRow('Nome:', _currentQuote.clientName, null),
-            _buildDetailRow('Telefone:', _currentQuote.clientPhone, null),
-            _buildDetailRow('Local:', '${_currentQuote.clientCity}/${_currentQuote.clientState}', null),
+            _buildDetailRow('Nome:', _currentQuote.clientName),
+            _buildDetailRow('Telefone:', _currentQuote.clientPhone),
+            _buildDetailRow('Local:', '${_currentQuote.clientCity}/${_currentQuote.clientState}'),
             const Divider(height: 32),
 
             // Seção de Componentes
             Text('Componentes Selecionados', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 16),
-            _buildDetailRow('Blank:', _currentQuote.blankName, null),
-            _buildDetailRow('Cabo:', _currentQuote.caboName, null),
-            _buildDetailRow('Reel Seat:', _currentQuote.reelSeatName, null),
-            _buildDetailRow('Passadores:', _currentQuote.passadoresName, null),
+            _buildDetailRow('Blank:', _currentQuote.blankName),
+            _buildDetailRow('Cabo:', _currentQuote.caboName, qty: _currentQuote.caboQuantity),
+            _buildDetailRow('Reel Seat:', _currentQuote.reelSeatName),
+            _buildDetailRow('Passadores:', _currentQuote.passadoresName, qty: _currentQuote.passadoresQuantity),
             
             const Divider(height: 32),
 
-            // Seção de Personalização
+            // Personalização
             Text('Personalização', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 16),
-            _buildDetailRow('Cor da Linha:', _currentQuote.corLinha, null),
-            _buildDetailRow('Gravação:', _currentQuote.gravacao, null),
+            _buildDetailRow('Cor da Linha:', _currentQuote.corLinha),
+            _buildDetailRow('Gravação:', _currentQuote.gravacao),
           
             const Divider(height: 32),
+
+            // --- NOVO: RELATÓRIO DE LUCRATIVIDADE (SÓ ADMIN) ---
+            if (_isAdmin) ...[
+              AdminProfitReport(
+                blank: _createTempComponent(_currentQuote.blankName, _currentQuote.blankPrice, _currentQuote.blankCost),
+                cabo: _createTempComponent(_currentQuote.caboName, _currentQuote.caboPrice, _currentQuote.caboCost),
+                caboQty: _currentQuote.caboQuantity,
+                reelSeat: _createTempComponent(_currentQuote.reelSeatName, _currentQuote.reelSeatPrice, _currentQuote.reelSeatCost),
+                passadores: _createTempComponent(_currentQuote.passadoresName, _currentQuote.passadoresPrice, _currentQuote.passadoresCost),
+                passadoresQty: _currentQuote.passadoresQuantity,
+                gravacaoCost: 0.0,
+                // Assumindo custo 0 e preço 25 (ou calculado na diferença do total se quiser ser exato)
+                gravacaoPrice: (_currentQuote.gravacao?.isNotEmpty ?? false) ? 25.0 : 0.0, 
+              ),
+              const SizedBox(height: 24),
+            ],
+            // ----------------------------------------------------
 
             // --- Botões de Ação ---
             _buildActionButtons(),
@@ -192,8 +243,9 @@ class _QuoteDetailScreenState extends State<QuoteDetailScreen> {
   }
 
   // Widget auxiliar para mostrar uma linha de detalhe (sem preço)
-  Widget _buildDetailRow(String title, String? value, double? price) {
+  Widget _buildDetailRow(String title, String? value, {int qty = 1}) {
     value = (value == null || value.isEmpty) ? 'Não selecionado' : value;
+    if (qty > 1) value = "$value ($qty un)"; // Mostra quantidade
     
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),

@@ -3,9 +3,11 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/component_model.dart';
 import '../models/quote_model.dart';
 import '../services/quote_service.dart';
+import '../services/config_service.dart';
 
 class RodBuilderProvider with ChangeNotifier {
   final QuoteService _quoteService = QuoteService();
+  final ConfigService _configService = ConfigService();
 
   // Componentes
   Component? _selectedBlank;
@@ -28,6 +30,8 @@ class RodBuilderProvider with ChangeNotifier {
   String _clientState = '';
 
   double _totalPrice = 0.0;
+  double _customizationPrice = 25.0; // Valor padrão inicial
+  double get customizationPrice => _customizationPrice; // Getter público
 
   // --- GETTERS ---
   Component? get selectedBlank => _selectedBlank;
@@ -45,6 +49,14 @@ class RodBuilderProvider with ChangeNotifier {
   String get clientCity => _clientCity;
   String get clientState => _clientState;
   double get totalPrice => _totalPrice;
+
+  // --- MÉTODO NOVO: Carregar Configurações ---
+  Future<void> fetchSettings() async {
+    final settings = await _configService.getSettings();
+    _customizationPrice = (settings['customizationPrice'] ?? 25.0).toDouble();
+    _calculateTotalPrice(); // Recalcula caso já tenha algo selecionado
+    notifyListeners();
+  }
 
   // --- SETTERS E MÉTODOS ---
 
@@ -116,7 +128,7 @@ class RodBuilderProvider with ChangeNotifier {
     total += (_selectedPassadores?.price ?? 0.0) * _passadoresQuantity;
 
     if (_gravacao.isNotEmpty) {
-      total += 25.0; 
+      total += _customizationPrice; 
     }
     
     _totalPrice = total;
@@ -158,16 +170,20 @@ class RodBuilderProvider with ChangeNotifier {
 
       blankName: _selectedBlank?.name,
       blankPrice: _selectedBlank?.price,
+      blankCost: _selectedBlank?.costPrice, // (NOVO)
       
       caboName: _selectedCabo?.name,
       caboPrice: _selectedCabo?.price,
+      caboCost: _selectedCabo?.costPrice, // (NOVO)
       caboQuantity: _caboQuantity, // (NOVO)
       
       reelSeatName: _selectedReelSeat?.name,
       reelSeatPrice: _selectedReelSeat?.price,
+      reelSeatCost: _selectedReelSeat?.costPrice, // (NOVO)
       
       passadoresName: _selectedPassadores?.name,
       passadoresPrice: _selectedPassadores?.price,
+      passadoresCost: _selectedPassadores?.costPrice, // (NOVO)
       passadoresQuantity: _passadoresQuantity, // (NOVO)
 
       corLinha: _corLinha,

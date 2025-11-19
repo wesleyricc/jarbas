@@ -1,14 +1,15 @@
-import 'dart:typed_data'; // Para o preview da imagem na web
-// import 'package:flutter/foundation.dart' show kIsWeb; // Não é mais necessário
+import 'dart:typed_data'; // Para Uint8List (essencial para Web)
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:url_launcher/url_launcher.dart'; // Para o botão de link
+import 'package:flutter/services.dart'; // Para InputFormatters
+import 'package:url_launcher/url_launcher.dart'; // Para abrir links
 import '../../../models/component_model.dart';
 import '../../../services/component_service.dart';
-import '../../../services/storage_service.dart'; // (NOVO) Serviço de Upload
+import '../../../services/storage_service.dart';
+import '../../../services/config_service.dart'; // (NOVO) Serviço de Configuração
+import 'package:image_picker/image_picker.dart';
 
 class ComponentFormScreen extends StatefulWidget {
-  final Component? component; // Se for nulo, é "Adicionar". Se não, é "Editar".
+  final Component? component; // Se nulo = Adicionar, Se existe = Editar
 
   const ComponentFormScreen({super.key, this.component});
 
@@ -18,28 +19,35 @@ class ComponentFormScreen extends StatefulWidget {
 
 class _ComponentFormScreenState extends State<ComponentFormScreen> {
   final _formKey = GlobalKey<FormState>();
+  
+  // Serviços
   final ComponentService _componentService = ComponentService();
-  final StorageService _storageService = StorageService(); // (NOVO)
+  final StorageService _storageService = StorageService();
+  final ConfigService _configService = ConfigService(); // Instância do ConfigService
+
   bool _isLoading = false;
 
-  // Controladores
+  // Controladores de Texto
   late TextEditingController _nameController;
   late TextEditingController _descController;
-  late TextEditingController _priceController;
+  late TextEditingController _priceController;     // Preço de Venda
+  late TextEditingController _costPriceController; // Preço de Custo (NOVO)
   late TextEditingController _stockController;
   late TextEditingController _supplierLinkController;
+  
   String? _selectedCategoryKey;
 
-  // --- (ATUALIZADO) Estado para Upload da Imagem ---
-  String? _currentImageUrl; // URL da imagem existente (para preview)
+  // Estado da Imagem
+  String? _currentImageUrl; // URL da imagem existente (se houver)
   bool _isUploading = false;
   double _uploadProgress = 0.0;
-  // Armazena os bytes da nova imagem selecionada (essencial para web)
-  Uint8List? _newImageBytes; 
-  String? _newImageExtension; // (NOVO) Armazena a extensão (ex: 'png')
-  // --- FIM DO ESTADO DE UPLOAD ---
+  Uint8List? _newImageBytes; // Bytes da nova imagem selecionada
+  String? _newImageExtension; // Extensão do arquivo (png, jpg)
 
-  // Mapa de categorias (para exibir nomes amigáveis)
+  // Configuração Global
+  double _defaultMargin = 0.0; // Armazena a margem carregada do banco
+
+  // Mapa de categorias para o Dropdown
   final Map<String, String> _categoriesMap = {
     'blank': 'Blank',
     'cabo': 'Cabo',
@@ -50,202 +58,228 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
   @override
   void initState() {
     super.initState();
-    // Preenche os controladores se estiver editando
+    // Inicializa os controladores (com dados existentes ou vazios)
     _nameController = TextEditingController(text: widget.component?.name ?? '');
     _descController = TextEditingController(text: widget.component?.description ?? '');
     _priceController = TextEditingController(text: widget.component?.price.toString() ?? '');
+    _costPriceController = TextEditingController(text: widget.component?.costPrice.toString() ?? '');
     _stockController = TextEditingController(text: widget.component?.stock.toString() ?? '');
     _supplierLinkController = TextEditingController(text: widget.component?.supplierLink ?? '');
+    
     _selectedCategoryKey = widget.component?.category;
-    _currentImageUrl = widget.component?.imageUrl; // (NOVO)
+    _currentImageUrl = widget.component?.imageUrl;
+
+    // 1. Carrega as configurações globais (Margem de Lucro)
+    _loadSettings();
+
+    // 2. Adiciona o listener para calcular o preço de venda automaticamente
+    _costPriceController.addListener(_calculateSellingPrice);
+  }
+
+  // Carrega a margem do ConfigService
+  Future<void> _loadSettings() async {
+    try {
+      final settings = await _configService.getSettings();
+      if (mounted) {
+        setState(() {
+          _defaultMargin = (settings['defaultMargin'] ?? 0.0).toDouble();
+        });
+      }
+    } catch (e) {
+      print("Erro ao carregar margem: $e");
+    }
+  }
+
+  // Lógica de Cálculo Automático: Custo + Margem%
+  void _calculateSellingPrice() {
+    String costText = _costPriceController.text;
+    if (costText.isEmpty) return;
+
+    // Se a margem for 0, não calculamos nada (permite edição manual livre)
+    if (_defaultMargin <= 0) return;
+
+    double cost = double.tryParse(costText) ?? 0.0;
+    
+    // Fórmula: Custo * (1 + Margem / 100)
+    // Ex: 50 * (1 + 1) = 100
+    double sellingPrice = cost * (1 + (_defaultMargin / 100));
+
+    // Atualiza o campo de venda
+    _priceController.text = sellingPrice.toStringAsFixed(2);
   }
 
   @override
   void dispose() {
+    // Remove listener e descarta controladores
+    _costPriceController.removeListener(_calculateSellingPrice);
     _nameController.dispose();
     _descController.dispose();
     _priceController.dispose();
+    _costPriceController.dispose();
     _stockController.dispose();
     _supplierLinkController.dispose();
     super.dispose();
   }
 
-  // (ATUALIZADO) Método para selecionar a imagem
-  Future<void> _pickImage() async {
-    FocusScope.of(context).unfocus();
-    final PickedImage? result = await _storageService.pickImageForPreview();
-    if (result != null) {
-      setState(() {
-        _newImageBytes = result.bytes;
-        _newImageExtension = result.extension;
-        _currentImageUrl = null;
-      });
+  // --- IMAGEM ---
 
-      ScaffoldMessenger.of(context).showSnackBar(
-         const SnackBar(content: Text('Imagem selecionada! Clique em SALVAR para enviar.'), duration: Duration(seconds: 1)),
+  Future<void> _pickImage() async {
+    // NENHUM código de UI aqui (sem unfocus, sem print, nada).
+    
+    try {
+      // Instancia DIRETO aqui para ser instantâneo
+      final ImagePicker picker = ImagePicker();
+      
+      // Chama a galeria DIRETAMENTE. Sem passar por service.
+      final XFile? image = await picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 800, // Opcional: Reduz tamanho para ajudar a memória do celular
+        imageQuality: 80, // Opcional
       );
 
+      if (image != null) {
+        // Só agora processamos os dados
+        final bytes = await image.readAsBytes();
+        final ext = image.name.split('.').last;
+
+        setState(() {
+          _newImageBytes = bytes;
+          _newImageExtension = ext.isEmpty ? 'jpg' : ext;
+          _currentImageUrl = null;
+        });
+      }
+    } catch (e) {
+      print("Erro ao pegar imagem: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erro na galeria: $e')),
+      );
     }
   }
 
-  // Método para abrir o link
+  // --- LINK DO FORNECEDOR ---
+
   Future<void> _launchSupplierLink() async {
-    // ... (código existente, sem alterações) ...
     final String url = _supplierLinkController.text;
     if (url.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Nenhum link cadastrado.'), backgroundColor: Colors.orange),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Preencha o link primeiro.')));
       return;
     }
-
     final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Não foi possível abrir o link: $url'), backgroundColor: Colors.red),
-      );
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else {
+        throw 'Could not launch';
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao abrir link: $url')));
     }
   }
 
-  // --- (MODIFICADO) Método para Salvar o Componente ---
+  // --- SALVAR ---
+
   Future<void> _saveComponent() async {
-    if (!_formKey.currentState!.validate()) {
-      return; // Formulário inválido
-    }
+    if (!_formKey.currentState!.validate()) return;
 
     setState(() { _isLoading = true; });
 
-    String imageUrlToSave = _currentImageUrl ?? ''; // Começa com a URL existente
+    String imageUrlToSave = _currentImageUrl ?? '';
     String? oldImageUrl = widget.component?.imageUrl;
 
     try {
-      // 1. Fazer upload da nova imagem (se houver)
+      // 1. Upload Imagem (se houver nova)
       if (_newImageBytes != null && _newImageExtension != null) {
         setState(() { _isUploading = true; _uploadProgress = 0.0; });
-
+        
         final UploadResult? result = await _storageService.uploadImage(
           fileBytes: _newImageBytes!,
           fileName: _nameController.text.isNotEmpty ? _nameController.text : 'component',
-          fileExtension: _newImageExtension!, // Passa a extensão
-          onProgress: (progress) {
-            setState(() { _uploadProgress = progress; });
-          },
+          fileExtension: _newImageExtension!,
+          onProgress: (p) => setState(() => _uploadProgress = p),
         );
 
         if (result != null) {
-          imageUrlToSave = result.downloadUrl; // Salva a nova URL
-          
-          // 2. Deletar a imagem antiga (se estiver editando e a URL antiga existir)
-          if (oldImageUrl != null && oldImageUrl.isNotEmpty) {
-            // Compara para não deletar a mesma imagem se for um re-upload
-            if (oldImageUrl != imageUrlToSave) {
-              await _storageService.deleteImage(oldImageUrl);
-            }
+          imageUrlToSave = result.downloadUrl;
+          // Deleta imagem antiga para não acumular lixo
+          if (oldImageUrl != null && oldImageUrl.isNotEmpty && oldImageUrl != imageUrlToSave) {
+            await _storageService.deleteImage(oldImageUrl);
           }
-        } else {
-          throw Exception("Falha no upload da imagem.");
         }
+        setState(() { _isUploading = false; });
       }
 
-      setState(() { _isUploading = false; });
-
-      // 3. Criar o objeto Componente
+      // 2. Cria o Objeto
       final component = Component(
-        id: widget.component?.id ?? '', // ID é ignorado ao adicionar
+        id: widget.component?.id ?? '', // ID vazio se novo
         name: _nameController.text,
         description: _descController.text,
         category: _selectedCategoryKey!,
+        
+        // Salva Preço de Venda e de Custo
         price: double.tryParse(_priceController.text) ?? 0.0,
+        costPrice: double.tryParse(_costPriceController.text) ?? 0.0,
+        
         stock: int.tryParse(_stockController.text) ?? 0,
-        imageUrl: imageUrlToSave, // Salva a URL (nova ou antiga)
+        imageUrl: imageUrlToSave,
         attributes: widget.component?.attributes ?? {},
         supplierLink: _supplierLinkController.text,
       );
 
-      // 4. Salvar no Firestore
+      // 3. Salva no Firestore
       if (widget.component == null) {
-        // Criar novo
         await _componentService.addComponent(component);
       } else {
-        // Atualizar existente
         await _componentService.updateComponent(widget.component!.id, component);
       }
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Componente salvo!'), backgroundColor: Colors.green),
-        );
-        Navigator.pop(context); // Volta para a lista
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Componente salvo!'), backgroundColor: Colors.green));
+        Navigator.pop(context);
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erro ao salvar: $e'), backgroundColor: Colors.red),
-        );
-      }
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao salvar: $e'), backgroundColor: Colors.red));
     } finally {
-      if (mounted) {
-        setState(() { _isLoading = false; _isUploading = false; });
-      }
+      if (mounted) setState(() { _isLoading = false; _isUploading = false; });
     }
   }
 
-  // Método para deletar (agora também deleta a imagem do storage)
+  // --- EXCLUIR ---
+
   Future<void> _deleteComponent() async {
-    // Confirmação de exclusão
-    final bool? confirmed = await showDialog(
+    if (widget.component == null) return;
+
+    final confirm = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (ctx) => AlertDialog(
         title: const Text('Confirmar Exclusão'),
-        content: const Text('Tem certeza que deseja excluir este componente? Esta ação não pode ser desfeita.'),
+        content: const Text('Tem certeza? Esta ação é irreversível.'),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancelar'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Excluir', style: TextStyle(color: Colors.red)),
-          ),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Excluir', style: TextStyle(color: Colors.red))),
         ],
       ),
     );
 
-    if (confirmed != true || widget.component == null) {
-      return;
-    }
-
-    setState(() { _isLoading = true; });
-
-    try {
-      // 1. Deletar o documento do Firestore
-      await _componentService.deleteComponent(widget.component!.id);
-      
-      // 2. Deletar a imagem associada do Storage
-      if (widget.component!.imageUrl.isNotEmpty) {
-        await _storageService.deleteImage(widget.component!.imageUrl);
-      }
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Componente excluído!'), backgroundColor: Colors.green),
-        );
-        Navigator.pop(context);
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erro ao excluir: $e'), backgroundColor: Colors.red),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() { _isLoading = false; });
+    if (confirm == true) {
+      setState(() => _isLoading = true);
+      try {
+        await _componentService.deleteComponent(widget.component!.id);
+        if (widget.component!.imageUrl.isNotEmpty) {
+          await _storageService.deleteImage(widget.component!.imageUrl);
+        }
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Excluído!'), backgroundColor: Colors.green));
+          Navigator.pop(context);
+        }
+      } catch (e) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao excluir: $e')));
+      } finally {
+        if (mounted) setState(() => _isLoading = false);
       }
     }
   }
+
+  // --- UI ---
 
   @override
   Widget build(BuildContext context) {
@@ -253,12 +287,12 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
       appBar: AppBar(
         title: Text(widget.component == null ? 'Adicionar Componente' : 'Editar Componente'),
         actions: [
-          if (widget.component != null) // Só mostra se estiver editando
+           if (widget.component != null)
             IconButton(
-              icon: const Icon(Icons.delete_outline),
-              tooltip: 'Excluir Componente',
+              icon: const Icon(Icons.delete_outline, color: Colors.red),
+              tooltip: 'Excluir',
               onPressed: _isLoading ? null : _deleteComponent,
-            ),
+            )
         ],
       ),
       body: SingleChildScrollView(
@@ -268,119 +302,132 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // --- (NOVO) Widget de Preview e Upload de Imagem ---
+              // 1. IMAGEM
               _buildImagePreview(),
               const SizedBox(height: 16),
               ElevatedButton.icon(
                 icon: const Icon(Icons.upload_file),
-                label: Text(_currentImageUrl != null && _currentImageUrl!.isNotEmpty ? 'Trocar Imagem' : 'Selecionar Imagem'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.grey[200],
-                  foregroundColor: Colors.black87
-                ),
+                label: const Text('Selecionar Imagem'),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.grey[200], foregroundColor: Colors.black87),
                 onPressed: _pickImage,
               ),
               if (_isUploading) ...[
                 const SizedBox(height: 8),
                 LinearProgressIndicator(value: _uploadProgress),
-                const SizedBox(height: 8),
-                Text('${(_uploadProgress * 100).toStringAsFixed(0)}% concluído', textAlign: TextAlign.center),
+                Text('${(_uploadProgress * 100).toStringAsFixed(0)}%', textAlign: TextAlign.center),
               ],
-              // --- FIM DO WIDGET DE UPLOAD ---
-
+              
               const Divider(height: 32),
               
-              // Categoria
+              // 2. CATEGORIA
               DropdownButtonFormField<String>(
                 value: _selectedCategoryKey,
                 hint: const Text('Categoria'),
-                items: _categoriesMap.entries.map((entry) {
-                  return DropdownMenuItem<String>(
-                    value: entry.key,
-                    child: Text(entry.value),
-                  );
-                }).toList(),
-                onChanged: (newValue) {
-                  setState(() { _selectedCategoryKey = newValue; });
-                },
-                validator: (value) => value == null ? 'Selecione uma categoria' : null,
+                decoration: const InputDecoration(border: OutlineInputBorder(), labelText: 'Categoria'),
+                items: _categoriesMap.entries.map((e) => DropdownMenuItem(value: e.key, child: Text(e.value))).toList(),
+                onChanged: (v) => setState(() => _selectedCategoryKey = v),
+                validator: (v) => v == null ? 'Selecione uma categoria' : null,
               ),
+              
               const SizedBox(height: 16),
               
-              // Nome
+              // 3. NOME
               TextFormField(
                 controller: _nameController,
-                decoration: const InputDecoration(labelText: 'Nome'),
-                validator: (value) => (value == null || value.isEmpty) ? 'Campo obrigatório' : null,
+                decoration: const InputDecoration(labelText: 'Nome do Componente', border: OutlineInputBorder()),
+                validator: (v) => v!.isEmpty ? 'Campo obrigatório' : null,
               ),
+              
               const SizedBox(height: 16),
               
-              // Descrição
+              // 4. DESCRIÇÃO
               TextFormField(
                 controller: _descController,
-                decoration: const InputDecoration(labelText: 'Descrição'),
-                maxLines: 3,
+                decoration: const InputDecoration(labelText: 'Descrição', border: OutlineInputBorder()),
+                maxLines: 2,
               ),
+
               const SizedBox(height: 16),
               
-              // Preço
-              TextFormField(
-                controller: _priceController,
-                decoration: const InputDecoration(labelText: 'Preço (ex: 150.99)'),
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}'))],
-                validator: (value) => (value == null || value.isEmpty) ? 'Campo obrigatório' : null,
+              // 5. PREÇOS (Lado a Lado)
+              Row(
+                children: [
+                  // CUSTO
+                  Expanded(
+                    child: TextFormField(
+                      controller: _costPriceController,
+                      decoration: const InputDecoration(
+                        labelText: 'Custo (R\$)', 
+                        border: const OutlineInputBorder(),
+                        //fillColor: Color(0xFFFFFDE7), // Amarelo claro para indicar input manual importante
+                        filled: true,
+                      ),
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}'))],
+                      validator: (v) => v!.isEmpty ? 'Obrigatório' : null,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  // VENDA (Calculado)
+                  Expanded(
+                    child: TextFormField(
+                      controller: _priceController,
+                      decoration: InputDecoration(
+                        labelText: 'Venda (R\$)',
+                        border: const OutlineInputBorder(),
+                        // Mostra a margem usada como dica
+                        //helperText: _defaultMargin > 0 ? 'Margem: ${_defaultMargin.toStringAsFixed(0)}%' : null,
+                      ),
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}'))],
+                      validator: (v) => v!.isEmpty ? 'Obrigatório' : null,
+                    ),
+                  ),
+                ],
               ),
+
               const SizedBox(height: 16),
               
-              // Estoque
+              // 6. ESTOQUE
               TextFormField(
-                controller: _stockController,
-                decoration: const InputDecoration(labelText: 'Estoque'),
+                controller: _stockController, 
+                decoration: const InputDecoration(labelText: 'Estoque', border: OutlineInputBorder()),
                 keyboardType: TextInputType.number,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                validator: (value) => (value == null || value.isEmpty) ? 'Campo obrigatório' : null,
               ),
+
               const SizedBox(height: 16),
               
-              // Link do Fornecedor (Mantido)
+              // 7. LINK
               TextFormField(
                 controller: _supplierLinkController,
-                decoration: const InputDecoration(labelText: 'Link do Fornecedor (Preço)'),
-                keyboardType: TextInputType.url,
+                decoration: const InputDecoration(
+                  labelText: 'Link do Fornecedor', 
+                  border: OutlineInputBorder(),
+                  suffixIcon: Icon(Icons.link),
+                ),
               ),
+              if (_supplierLinkController.text.isNotEmpty)
+                 TextButton.icon(
+                   onPressed: _launchSupplierLink,
+                   icon: const Icon(Icons.open_in_new, size: 16),
+                   label: const Text('Testar Link'),
+                 ),
+
               const SizedBox(height: 32),
               
-              // Botões
-              _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        // Botão Salvar
-                        ElevatedButton(
-                          onPressed: _saveComponent,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.blueGrey[700],
-                            foregroundColor: Colors.white,
-                          ),
-                          child: const Text('Salvar'),
-                        ),
-                        const SizedBox(height: 12),
-
-                        // Botão Consultar Valor (Link do Fornecedor)
-                        ElevatedButton.icon(
-                          icon: const Icon(Icons.open_in_new, size: 18),
-                          label: const Text('Consultar Valor (Link)'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFFFFFFFF),
-                            foregroundColor: Colors.blueGrey[800],
-                            side: BorderSide(color: Colors.grey[400]!),
-                          ),
-                          onPressed: _launchSupplierLink,
-                        ),
-                      ],
+              // 8. BOTÃO SALVAR
+              _isLoading 
+                ? const Center(child: CircularProgressIndicator())
+                : ElevatedButton(
+                    onPressed: _saveComponent,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blueGrey[800], 
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
                     ),
+                    child: const Text('SALVAR COMPONENTE', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  ),
             ],
           ),
         ),
@@ -388,37 +435,29 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
     );
   }
 
-  // (NOVO) Widget de preview da imagem
+  // Widget auxiliar para preview da imagem
   Widget _buildImagePreview() {
-    return Container(
-      height: 200,
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: Colors.grey[200],
-        borderRadius: BorderRadius.circular(12.0),
-        border: Border.all(color: Colors.grey[400]!),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12.0),
-        child: () {
-          // 1. Se uma nova imagem foi selecionada (bytes)
-          if (_newImageBytes != null) {
-            return Image.memory(_newImageBytes!, fit: BoxFit.cover);
-          }
-          // 2. Se uma imagem existente está carregada (URL)
-          if (_currentImageUrl != null && _currentImageUrl!.isNotEmpty) {
-            return Image.network(
-              _currentImageUrl!,
-              fit: BoxFit.cover,
-              errorBuilder: (c, e, s) => const Icon(Icons.broken_image, color: Colors.grey, size: 40),
-            );
-          }
-          // 3. Placeholder padrão
-          return const Center(
-            child: Icon(Icons.image_not_supported, color: Colors.grey, size: 40),
-          );
-        }(),
-      ),
-    );
+     return Container(
+       height: 200, 
+       width: double.infinity,
+       decoration: BoxDecoration(
+         color: Colors.grey[200],
+         borderRadius: BorderRadius.circular(12),
+         border: Border.all(color: Colors.grey[400]!),
+       ),
+       child: ClipRRect(
+         borderRadius: BorderRadius.circular(12),
+         child: _newImageBytes != null 
+          ? Image.memory(_newImageBytes!, fit: BoxFit.cover)
+          : (_currentImageUrl != null && _currentImageUrl!.isNotEmpty
+              ? Image.network(
+                  _currentImageUrl!, 
+                  fit: BoxFit.cover,
+                  errorBuilder: (c,e,s) => const Icon(Icons.broken_image, size: 50, color: Colors.grey),
+                ) 
+              : const Center(child: Icon(Icons.add_photo_alternate, size: 50, color: Colors.grey))
+            ),
+       ),
+     );
   }
 }

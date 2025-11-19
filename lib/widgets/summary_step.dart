@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../providers/rod_builder_provider.dart';
+import 'admin_profit_report.dart';
 
 class SummaryStep extends StatelessWidget {
   final bool isAdmin; // Recebe o status de admin
@@ -83,7 +84,7 @@ class SummaryStep extends StatelessWidget {
             _buildItemRow(
               'Gravação:',
               provider.gravacao,
-              provider.gravacao.isNotEmpty ? 25.0 : null,
+              provider.gravacao.isNotEmpty ? provider.customizationPrice : null, 
             ),
           ],
         ),
@@ -127,6 +128,22 @@ class SummaryStep extends StatelessWidget {
               ],
             ),
           ),
+
+          if (isAdmin) ...[
+          const SizedBox(height: 32),
+          AdminProfitReport(
+            blank: provider.selectedBlank,
+            cabo: provider.selectedCabo,
+            caboQty: provider.caboQuantity,
+            reelSeat: provider.selectedReelSeat,
+            passadores: provider.selectedPassadores,
+            passadoresQty: provider.passadoresQuantity,
+            // Se a gravação tem custo para você (ex: R$ 5,00 de material), coloque aqui.
+            // Caso contrário, deixe 0.0. O preço de venda é 25.0 se houver texto.
+            gravacaoCost: 0.0, 
+            gravacaoPrice: provider.gravacao.isNotEmpty ? provider.customizationPrice : 0.0,
+          ),
+        ],
         
         if (!isAdmin)
           Container(

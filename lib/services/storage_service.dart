@@ -1,7 +1,7 @@
 import 'dart:typed_data';
-import 'package:file_picker/file_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:uuid/uuid.dart';
+import 'package:image_picker/image_picker.dart';
 
 // Classe auxiliar para o resultado do picker
 class PickedImage {
@@ -25,37 +25,25 @@ class StorageService {
   /// Seleciona a imagem e retorna os BYTES (compatível com Web e Mobile)
   Future<PickedImage?> pickImageForPreview() async {
     try {
-      print("[StorageService] Abrindo seletor de arquivos...");
+      // Usa o ImagePicker em vez do FilePicker
+      final ImagePicker picker = ImagePicker();
       
-      // 'withData: true' é crucial para Web
-      FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.image,
-        withData: true, 
-        allowMultiple: false,
-      );
+      // Abre galeria
+      final XFile? image = await picker.pickImage(source: ImageSource.gallery);
 
-      if (result == null || result.files.isEmpty) {
-        print("[StorageService] Seleção cancelada pelo usuário.");
-        return null;
-      }
+      if (image == null) return null;
 
-      PlatformFile file = result.files.first;
+      // Lê os bytes
+      Uint8List bytes = await image.readAsBytes();
       
-      print("[StorageService] Arquivo selecionado: ${file.name}");
-      print("[StorageService] Bytes carregados: ${file.bytes?.lengthInBytes}");
+      // Pega a extensão (pequeno ajuste pois XFile não dá a extensão direta às vezes)
+      String extension = image.name.split('.').last;
+      if (extension.isEmpty) extension = 'jpg';
 
-      if (file.bytes == null) {
-        print("[StorageService] ERRO: Os bytes do arquivo vieram nulos. Tente 'withData: true'.");
-        return null;
-      }
-
-      // Pega a extensão ou define jpg como padrão
-      String fileExtension = file.extension ?? 'jpg';
-
-      return PickedImage(bytes: file.bytes!, extension: fileExtension);
+      return PickedImage(bytes: bytes, extension: extension);
 
     } catch (e) {
-      print("[StorageService] ERRO CRÍTICO ao selecionar imagem: $e");
+      print("[StorageService] Erro: $e");
       return null;
     }
   }

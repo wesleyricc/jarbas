@@ -4,7 +4,9 @@ import '../../../models/component_model.dart'; // Para carregar os componentes
 import '../../../services/quote_service.dart';
 import '../../../services/component_service.dart'; // Para buscar os componentes
 import '../../../services/whatsapp_service.dart';
+import '../../../services/config_service.dart';
 import '../widgets/component_selector.dart'; // Reutiliza o seletor
+import '../widgets/admin_profit_report.dart';
 
 class AdminQuoteDetailScreen extends StatefulWidget {
   final Quote quote;
@@ -18,10 +20,9 @@ class AdminQuoteDetailScreen extends StatefulWidget {
 class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
   final QuoteService _quoteService = QuoteService();
   final ComponentService _componentService = ComponentService();
+  final ConfigService _configService = ConfigService(); // (NOVO)
   bool _isLoading = false;
   bool _isDeleting = false;
-  int _caboQty = 1;
-  int _passadoresQty = 1;
 
   late String _clientName;
   late String _clientPhone;
@@ -40,6 +41,10 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
   Component? _selectedReelSeat;
   Component? _selectedPassadores;
 
+// Quantidades
+  int _caboQty = 1;
+  int _passadoresQty = 1;
+
   // Personalização (não muda nesta tela)
   late String _corLinha;
   late String _gravacao;
@@ -48,6 +53,8 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
   late String _currentStatus;
 
   // Lista de status que o admin pode selecionar
+  // Config
+  double _customizationPrice = 25.0; // (NOVO)
   final List<String> _statusOptions = [
     'pendente',
     'enviado',
@@ -61,6 +68,16 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
   void initState() {
     super.initState();
     _loadQuoteData();
+    _loadSettings();
+  }
+
+Future<void> _loadSettings() async {
+    final settings = await _configService.getSettings();
+    if (mounted) {
+      setState(() {
+        _customizationPrice = (settings['customizationPrice'] ?? 25.0).toDouble();
+      });
+    }
   }
 
   // Carrega os dados do orçamento original
@@ -105,11 +122,11 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
   double _calculateNewPrice() {
     double total = 0.0;
     total += _selectedBlank?.price ?? 0.0;
-    total += (_selectedCabo?.price ?? 0.0) * _caboQty; // Multiplica
+    total += (_selectedCabo?.price ?? 0.0) * _caboQty;
     total += _selectedReelSeat?.price ?? 0.0;
-    total += (_selectedPassadores?.price ?? 0.0) * _passadoresQty; // Multiplica
+    total += (_selectedPassadores?.price ?? 0.0) * _passadoresQty;
     if (_gravacao.isNotEmpty) {
-      total += 25.0;
+      total += _customizationPrice; // Usa valor dinâmico
     }
     return total;
   }
@@ -333,6 +350,23 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
             _buildComponentLoaders(),
             
             const Divider(height: 32),
+
+            // --- NOVO: RELATÓRIO DE LUCRATIVIDADE ---
+            // Inserimos a tabela aqui, antes da proposta final
+            if (_selectedBlank != null || _selectedCabo != null) ...[
+               AdminProfitReport(
+                blank: _selectedBlank,
+                cabo: _selectedCabo,
+                caboQty: _caboQty,
+                reelSeat: _selectedReelSeat,
+                passadores: _selectedPassadores,
+                passadoresQty: _passadoresQty,
+                gravacaoCost: 0.0,
+                gravacaoPrice: _gravacao.isNotEmpty ? _customizationPrice : 0.0,
+              ),
+              const Divider(height: 32),
+            ],
+            // ----------------------------------------
 
             // --- SEÇÃO 4: RESUMO DA PROPOSTA ---
             Text('Proposta Final', style: Theme.of(context).textTheme.titleLarge),
