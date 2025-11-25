@@ -6,6 +6,8 @@ import '../../services/user_service.dart';
 import '../../services/whatsapp_service.dart';
 import '../widgets/client_info_step.dart';
 import '../widgets/component_selector.dart';
+import '../widgets/passadores_step.dart'; 
+import '../widgets/acessorios_step.dart';
 import '../widgets/customization_step.dart';
 import '../widgets/price_summary_bar.dart';
 import '../widgets/summary_step.dart';
@@ -20,7 +22,9 @@ class RodBuilderScreen extends StatefulWidget {
 class _RodBuilderScreenState extends State<RodBuilderScreen> {
   int _currentStep = 0;
   bool _isLoading = false;
-  final int _totalSteps = 7; // Cliente + 4 Componentes + Personalização + Resumo
+  
+  // Passos: 0:Client, 1:Blank, 2:Cabo, 3:Reel, 4:Passadores, 5:Acessórios, 6:Custom, 7:Resumo
+  final int _totalSteps = 8; 
 
   final AuthService _authService = AuthService();
   final UserService _userService = UserService();
@@ -29,10 +33,11 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
   @override
   void initState() {
     super.initState();
+    // Inicializa: Limpa e Carrega Config
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final provider = context.read<RodBuilderProvider>();
       provider.clearBuild();
-      provider.fetchSettings(); // <--- ADICIONE ESTA LINHA
+      provider.fetchSettings(); 
     });
     _isAdminFuture = _getAdminStatus();
   }
@@ -43,7 +48,7 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
     return await _userService.isAdmin(user);
   }
 
-  // --- AÇÕES DE FINALIZAÇÃO ---
+  // --- AÇÕES ---
 
   Future<void> _saveQuoteAsDraft(RodBuilderProvider provider) async {
     final user = _authService.currentUser;
@@ -56,13 +61,12 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
     }
 
     setState(() => _isLoading = true);
+    
     bool success = await provider.saveQuote(user.uid, status: 'rascunho');
     
     if (mounted) {
       if (success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Rascunho salvo!'), backgroundColor: Colors.green),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Rascunho salvo!'), backgroundColor: Colors.green));
         Navigator.pop(context);
       } else {
         _showError('Erro ao salvar rascunho.');
@@ -82,6 +86,7 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
     }
 
     setState(() => _isLoading = true);
+    
     bool success = await provider.saveQuote(user.uid, status: 'pendente');
 
     if (mounted) {
@@ -101,9 +106,7 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
   }
 
   void _showError(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), backgroundColor: Colors.red),
-    );
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: Colors.red));
   }
 
   // --- NAVEGAÇÃO ---
@@ -123,17 +126,13 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // AppBar Limpa
       appBar: AppBar(
-        title: const Text('Customizar'),
+        title: const Text('Montar Vara'),
         centerTitle: true,
         elevation: 0,
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
-        leading: IconButton(
-          icon: const Icon(Icons.close),
-          onPressed: () => Navigator.pop(context),
-        ),
+        leading: IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
       ),
       body: FutureBuilder<bool>(
         future: _isAdminFuture,
@@ -145,22 +144,14 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
 
           return Column(
             children: [
-              // 1. BARRA DE PROGRESSO SUPERIOR
               _buildProgressBar(),
-
-              // 2. CONTEÚDO DA ETAPA (EXPANDIDO)
               Expanded(
                 child: AnimatedSwitcher(
                   duration: const Duration(milliseconds: 300),
                   child: _buildStepContent(_currentStep, isAdmin, provider),
                 ),
               ),
-
-              // 3. BARRA DE PREÇO (SE ADMIN)
-              if (isAdmin)
-                PriceSummaryBar(totalPrice: provider.totalPrice),
-
-              // 4. BARRA DE NAVEGAÇÃO INFERIOR
+              if (isAdmin) PriceSummaryBar(totalPrice: provider.totalPrice),
               _buildBottomNavigation(isAdmin, provider),
             ],
           );
@@ -169,7 +160,6 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
     );
   }
 
-  // Widget da Barra de Progresso
   Widget _buildProgressBar() {
     return Container(
       color: Colors.white,
@@ -177,50 +167,31 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Passo ${_currentStep + 1} de $_totalSteps',
-            style: TextStyle(color: Colors.grey[600], fontWeight: FontWeight.bold, fontSize: 12),
-          ),
+          Text('Passo ${_currentStep + 1} de $_totalSteps', style: TextStyle(color: Colors.grey[600], fontWeight: FontWeight.bold, fontSize: 12)),
           const SizedBox(height: 8),
           ClipRRect(
             borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: (_currentStep + 1) / _totalSteps,
-              backgroundColor: Colors.grey[200],
-              valueColor: AlwaysStoppedAnimation<Color>(Colors.blueGrey[700]!),
-              minHeight: 6,
-            ),
+            child: LinearProgressIndicator(value: (_currentStep + 1) / _totalSteps, backgroundColor: Colors.grey[200], valueColor: AlwaysStoppedAnimation<Color>(Colors.blueGrey[700]!), minHeight: 6),
           ),
         ],
       ),
     );
   }
 
-  // Conteúdo de cada passo
   Widget _buildStepContent(int step, bool isAdmin, RodBuilderProvider provider) {
-    // Envolvemos em um Container com Key para o AnimatedSwitcher funcionar
     return Container(
       key: ValueKey<int>(step),
-      color: const Color(0xFFF5F7FA),
+      color: const Color(0xFFF5F7FA), 
       padding: const EdgeInsets.all(24.0),
-      alignment: Alignment.topCenter,
+      alignment: Alignment.topCenter, 
       child: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Título Grande da Etapa
-            Text(
-              _getStepTitle(step),
-              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.black87),
-            ),
+            Text(_getStepTitle(step), style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.black87)),
             const SizedBox(height: 8),
-            Text(
-              _getStepSubtitle(step),
-              style: TextStyle(fontSize: 16, color: Colors.grey[600]),
-            ),
+            Text(_getStepSubtitle(step), style: TextStyle(fontSize: 16, color: Colors.grey[600])),
             const SizedBox(height: 32),
-            
-            // O Conteúdo Específico
             _getStepWidget(step, isAdmin, provider),
           ],
         ),
@@ -228,57 +199,22 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
     );
   }
 
-  // Barra inferior com botões grandes
   Widget _buildBottomNavigation(bool isAdmin, RodBuilderProvider provider) {
     bool isLastStep = _currentStep == _totalSteps - 1;
-
     return Container(
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 10, offset: const Offset(0, -5))],
-      ),
+      decoration: BoxDecoration(color: Colors.white, boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 10, offset: const Offset(0, -5))]),
       child: Row(
         children: [
-          // Botão Voltar (Visível se não for o primeiro passo)
           if (_currentStep > 0)
-            Expanded(
-              flex: 1,
-              child: OutlinedButton(
-                onPressed: _isLoading ? null : _prevStep,
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  side: BorderSide(color: Colors.grey[400]!),
-                ),
-                child: const Text('Voltar', style: TextStyle(color: Colors.black87)),
-              ),
-            ),
-          
+            Expanded(child: OutlinedButton(onPressed: _isLoading ? null : _prevStep, style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16), side: BorderSide(color: Colors.grey[400]!)), child: const Text('Voltar', style: TextStyle(color: Colors.black87)))),
           if (_currentStep > 0) const SizedBox(width: 16),
-
-          // Botão Próximo / Finalizar
           Expanded(
             flex: 2,
             child: ElevatedButton(
-              onPressed: _isLoading 
-                ? null 
-                : (isLastStep 
-                    ? () => isAdmin ? _saveQuoteAsDraft(provider) : _submitClientQuote(provider)
-                    : _nextStep),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: isLastStep ? (isAdmin ? Colors.blue[700] : const Color(0xFF25D366)) : Colors.blueGrey[800],
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                elevation: 0,
-              ),
-              child: _isLoading 
-                ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                : Text(
-                    isLastStep 
-                      ? (isAdmin ? 'Salvar Rascunho' : 'Solicitar via WhatsApp') 
-                      : 'Próximo Passo',
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
+              onPressed: _isLoading ? null : (isLastStep ? () => isAdmin ? _saveQuoteAsDraft(provider) : _submitClientQuote(provider) : _nextStep),
+              style: ElevatedButton.styleFrom(backgroundColor: isLastStep ? (isAdmin ? Colors.blue[700] : const Color(0xFF25D366)) : Colors.blueGrey[800], foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 16), elevation: 0),
+              child: _isLoading ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : Text(isLastStep ? (isAdmin ? 'Salvar Rascunho' : 'Solicitar via WhatsApp') : 'Próximo Passo', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             ),
           ),
         ],
@@ -286,7 +222,58 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
     );
   }
 
-  // --- HELPER METHODS PARA TÍTULOS E WIDGETS ---
+  // --- WIDGETS DOS PASSOS ---
+
+  Widget _getStepWidget(int step, bool isAdmin, RodBuilderProvider provider) {
+    switch (step) {
+      case 0:
+        return const ClientInfoStep();
+        
+      case 1: // BLANK
+        return ComponentSelector(
+          category: 'blank',
+          selectedComponent: provider.selectedBlank,
+          isAdmin: isAdmin,
+          // --- CORREÇÃO: Aceita (c, v) ---
+          onSelect: (component, variation) => provider.selectBlank(component, variation: variation),
+        );
+        
+      case 2: // CABO
+        return ComponentSelector(
+          category: 'cabo',
+          selectedComponent: provider.selectedCabo,
+          isAdmin: isAdmin,
+          quantity: provider.caboQuantity,
+          onQuantityChanged: (val) => provider.setCaboQuantity(val),
+          // --- CORREÇÃO: Aceita (c, v) ---
+          onSelect: (component, variation) => provider.selectCabo(component, variation: variation),
+        );
+        
+      case 3: // REEL SEAT
+        return ComponentSelector(
+          category: 'reel_seat',
+          selectedComponent: provider.selectedReelSeat,
+          isAdmin: isAdmin,
+          // --- CORREÇÃO: Aceita (c, v) ---
+          onSelect: (component, variation) => provider.selectReelSeat(component, variation: variation),
+        );
+        
+      case 4: // PASSADORES (Lista)
+        return PassadoresStep(isAdmin: isAdmin);
+        
+      case 5:
+      return AcessoriosStep(isAdmin: isAdmin);
+        
+      case 6:
+      return CustomizationStep(isAdmin: isAdmin);
+
+      case 7:
+        return SummaryStep(isAdmin: isAdmin);
+        
+      default:
+        return const SizedBox.shrink();
+    }
+  }
 
   String _getStepTitle(int step) {
     switch (step) {
@@ -295,8 +282,9 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
       case 2: return 'Escolha o Cabo';
       case 3: return 'Escolha o Reel Seat';
       case 4: return 'Escolha os Passadores';
-      case 5: return 'Personalize';
-      case 6: return 'Resumo Final';
+      case 5: return 'Acessórios'; // Novo Título
+      case 6: return 'Personalize';
+      case 7: return 'Resumo Final';
       default: return '';
     }
   }
@@ -307,58 +295,11 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
       case 1: return 'O corpo da vara. Selecione a base ideal.';
       case 2: return 'O conforto da pegada. Defina o material e a quantidade.';
       case 3: return 'Onde sua carretilha ou molinete será fixado.';
-      case 4: return 'Guias para a linha. Defina o modelo e a quantidade.';
-      case 5: return 'Dê o seu toque final com cores e textos.';
-      case 6: return 'Confira tudo antes de enviar.';
+      case 4: return 'Adicione quantos passadores forem necessários.';
+      case 5: return 'Escolha itens extras para sua vara.'; // Novo Subtítulo
+      case 6: return 'Dê o seu toque final com a gravação.';
+      case 7: return 'Confira tudo antes de enviar.';
       default: return '';
-    }
-  }
-
-  Widget _getStepWidget(int step, bool isAdmin, RodBuilderProvider provider) {
-    switch (step) {
-      case 0:
-        return const ClientInfoStep();
-      case 1:
-        return ComponentSelector(
-          category: 'blank',
-          selectedComponent: provider.selectedBlank,
-          onSelect: (c) => provider.selectBlank(c),
-          isAdmin: isAdmin,
-        );
-      case 2:
-        return ComponentSelector(
-          category: 'cabo',
-          selectedComponent: provider.selectedCabo,
-          onSelect: (c) => provider.selectCabo(c),
-          isAdmin: isAdmin,
-          quantity: provider.caboQuantity,
-          onQuantityChanged: (val) => provider.setCaboQuantity(val),
-        );
-      case 3:
-        return ComponentSelector(
-          category: 'reel_seat',
-          selectedComponent: provider.selectedReelSeat,
-          onSelect: (c) => provider.selectReelSeat(c),
-          isAdmin: isAdmin,
-        );
-      case 4:
-        return ComponentSelector(
-          category: 'passadores',
-          selectedComponent: provider.selectedPassadores,
-          onSelect: (c) => provider.selectPassadores(c),
-          isAdmin: isAdmin,
-          quantity: provider.passadoresQuantity,
-          onQuantityChanged: (val) => provider.setPassadoresQuantity(val),
-        );
-      case 5:
-        // --- ATUALIZAÇÃO AQUI ---
-        // Passamos o isAdmin para o widget
-        return CustomizationStep(isAdmin: isAdmin); 
-        
-      case 6:
-        return SummaryStep(isAdmin: isAdmin);
-      default:
-        return const SizedBox.shrink();
     }
   }
 }

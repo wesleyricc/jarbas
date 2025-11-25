@@ -6,6 +6,9 @@ class Quote {
   final String status;
   final Timestamp createdAt;
   final double totalPrice;
+  final String? blankVariation; // (NOVO)
+  final String? caboVariation; // (NOVO)
+  final String? reelSeatVariation; // (NOVO)
 
   final String clientName;
   final String clientPhone;
@@ -14,21 +17,27 @@ class Quote {
 
   final String? blankName;
   final double? blankPrice;
-  final double? blankCost; // (NOVO)
+  final double? blankCost;
   
   final String? caboName;
   final double? caboPrice;
-  final double? caboCost; // (NOVO)
-  final int caboQuantity; // (NOVO)
+  final double? caboCost;
+  final int caboQuantity;
 
   final String? reelSeatName;
   final double? reelSeatPrice;
-  final double? reelSeatCost; // (NOVO)
+  final double? reelSeatCost;
   
+  // --- CAMPOS ANTIGOS (LEGADO - NECESSÁRIOS PARA O ERRO SUMIR) ---
   final String? passadoresName;
   final double? passadoresPrice;
-  final double? passadoresCost; // (NOVO)
-  final int passadoresQuantity; // (NOVO)
+  final double? passadoresCost;
+  final int passadoresQuantity;
+  // ---------------------------------------------------------------
+
+  // --- CAMPO NOVO (LISTA) ---
+  final List<Map<String, dynamic>> passadoresList; 
+  final List<Map<String, dynamic>> acessoriosList;
 
   final String? corLinha;
   final String? gravacao;
@@ -44,19 +53,29 @@ class Quote {
     required this.clientCity,
     required this.clientState,
     this.blankName,
+    this.blankVariation,
     this.blankPrice,
-    this.blankCost, // (NOVO)
+    this.blankCost,
     this.caboName,
+    this.caboVariation,
     this.caboPrice,
-    this.caboCost, // (NOVO)
-    this.caboQuantity = 1, // Padrão 1
+    this.caboCost,
+    this.caboQuantity = 1,
     this.reelSeatName,
+    this.reelSeatVariation,
     this.reelSeatPrice,
-    this.reelSeatCost, // (NOVO)
+    this.reelSeatCost,
+    
+    // Legado
     this.passadoresName,
     this.passadoresPrice,
-    this.passadoresCost, // (NOVO)
-    this.passadoresQuantity = 1, // Padrão 1
+    this.passadoresCost,
+    this.passadoresQuantity = 1,
+
+    // Novo
+    this.passadoresList = const [],
+    this.acessoriosList = const [],
+    
     this.corLinha,
     this.gravacao,
   });
@@ -64,35 +83,52 @@ class Quote {
   factory Quote.fromFirestore(DocumentSnapshot doc) {
     Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
 
+    // Lógica de Lista:
+    List<Map<String, dynamic>> loadedPassadores = [];
+    if (data['passadoresList'] != null) {
+      loadedPassadores = List<Map<String, dynamic>>.from(data['passadoresList']);
+    } else if (data['passadoresName'] != null) {
+      // Se não tem lista, mas tem o antigo, cria uma lista na memória
+      loadedPassadores.add({
+        'name': data['passadoresName'],
+        'price': (data['passadoresPrice'] ?? 0.0).toDouble(),
+        'cost': (data['passadoresCost'] ?? 0.0).toDouble(),
+        'quantity': (data['passadoresQuantity'] ?? 1).toInt(),
+      });
+    }
+
+    // (NOVO) Carrega Acessórios
+    List<Map<String, dynamic>> loadedAcessorios = [];
+    if (data['acessoriosList'] != null) {
+      loadedAcessorios = List<Map<String, dynamic>>.from(data['acessoriosList']);
+    }
+
     return Quote(
       id: doc.id,
       userId: data['userId'] ?? '',
       status: data['status'] ?? 'rascunho',
       createdAt: data['createdAt'] ?? Timestamp.now(),
       totalPrice: (data['totalPrice'] ?? 0.0).toDouble(),
-      
       clientName: data['clientName'] ?? '',
       clientPhone: data['clientPhone'] ?? '',
       clientCity: data['clientCity'] ?? '',
       clientState: data['clientState'] ?? '',
-
       blankName: data['blankName'],
       blankPrice: (data['blankPrice'] ?? 0.0).toDouble(),
-      blankCost: (data['blankCost'] ?? 0.0).toDouble(), // (NOVO)
-      
+      blankCost: (data['blankCost'] ?? 0.0).toDouble(),
+      blankVariation: data['blankVariation'],
       caboName: data['caboName'],
       caboPrice: (data['caboPrice'] ?? 0.0).toDouble(),
-      caboCost: (data['caboCost'] ?? 0.0).toDouble(), // (NOVO)
-      caboQuantity: (data['caboQuantity'] ?? 1).toInt(), // (NOVO)
-      
+      caboCost: (data['caboCost'] ?? 0.0).toDouble(),
+      caboQuantity: (data['caboQuantity'] ?? 1).toInt(),
+      caboVariation: data['caboVariation'],
       reelSeatName: data['reelSeatName'],
       reelSeatPrice: (data['reelSeatPrice'] ?? 0.0).toDouble(),
-      reelSeatCost: (data['reelSeatCost'] ?? 0.0).toDouble(), // (NOVO)
-      
-      passadoresName: data['passadoresName'],
-      passadoresPrice: (data['passadoresPrice'] ?? 0.0).toDouble(),
-      passadoresCost: (data['passadoresCost'] ?? 0.0).toDouble(), // (NOVO)
-      passadoresQuantity: (data['passadoresQuantity'] ?? 1).toInt(), // (NOVO)
+      reelSeatCost: (data['reelSeatCost'] ?? 0.0).toDouble(),
+      reelSeatVariation: data['reelSeatVariation'],
+
+      passadoresList: loadedPassadores,
+      acessoriosList: loadedAcessorios,
 
       corLinha: data['corLinha'],
       gravacao: data['gravacao'],
@@ -110,24 +146,27 @@ class Quote {
       'clientPhone': clientPhone,
       'clientCity': clientCity,
       'clientState': clientState,
-
+      
       'blankName': blankName,
       'blankPrice': blankPrice,
-      'blankCost': blankCost, // (NOVO)
+      'blankCost': blankCost,
+      'blankVariation': blankVariation,
       
       'caboName': caboName,
       'caboPrice': caboPrice,
-      'caboCost': caboCost, // (NOVO)
-      'caboQuantity': caboQuantity, // (NOVO)
+      'caboCost': caboCost,
+      'caboQuantity': caboQuantity,
+      'caboVariation': caboVariation,
       
       'reelSeatName': reelSeatName,
       'reelSeatPrice': reelSeatPrice,
-      'reelSeatCost': reelSeatCost, // (NOVO)
+      'reelSeatCost': reelSeatCost,
+      'reelSeatVariation': reelSeatVariation,
       
-      'passadoresName': passadoresName,
-      'passadoresPrice': passadoresPrice,
-      'passadoresCost': passadoresCost, // (NOVO)
-      'passadoresQuantity': passadoresQuantity, // (NOVO)
+      // Não precisamos salvar os campos antigos (passadoresName) no banco, 
+      // salvamos apenas a lista nova.
+      'passadoresList': passadoresList,
+      'acessoriosList': acessoriosList,
 
       'corLinha': corLinha,
       'gravacao': gravacao,

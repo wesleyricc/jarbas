@@ -4,13 +4,35 @@ import '../../../providers/rod_builder_provider.dart';
 import 'admin_profit_report.dart';
 
 class SummaryStep extends StatelessWidget {
-  final bool isAdmin; // Recebe o status de admin
+  final bool isAdmin;
 
   const SummaryStep({super.key, required this.isAdmin});
 
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<RodBuilderProvider>();
+
+    // 1. Prepara lista de PASSADORES para o Relatório
+    final List<Map<String, dynamic>> passadoresForReport = provider.selectedPassadoresList.map((item) {
+      return {
+        'name': item.component.name,
+        'variation': item.variation,
+        'cost': item.component.costPrice,
+        'price': item.component.price,
+        'quantity': item.quantity,
+      };
+    }).toList();
+
+    // 2. Prepara lista de ACESSÓRIOS para o Relatório (NOVO)
+    final List<Map<String, dynamic>> acessoriosForReport = provider.selectedAcessoriosList.map((item) {
+      return {
+        'name': item.component.name,
+        'variation': item.variation,
+        'cost': item.component.costPrice,
+        'price': item.component.price,
+        'quantity': item.quantity,
+      };
+    }).toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -48,24 +70,53 @@ class SummaryStep extends StatelessWidget {
               'Blank:',
               provider.selectedBlank?.name,
               provider.selectedBlank?.price,
+              variation: provider.selectedBlankVariation,
             ),
             _buildItemRow(
               'Cabo:',
               provider.selectedCabo?.name,
               provider.selectedCabo?.price,
               quantity: provider.caboQuantity,
+              variation: provider.selectedCaboVariation,
             ),
             _buildItemRow(
               'Reel Seat:',
               provider.selectedReelSeat?.name,
               provider.selectedReelSeat?.price,
+              variation: provider.selectedReelSeatVariation,
             ),
-            _buildItemRow(
-              'Passadores:',
-              provider.selectedPassadores?.name,
-              provider.selectedPassadores?.price,
-              quantity: provider.passadoresQuantity,
+            
+            // --- Lista de Passadores ---
+            const Padding(
+              padding: EdgeInsets.only(top: 12.0, bottom: 4.0),
+              child: Text("Passadores:", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
             ),
+            if (provider.selectedPassadoresList.isEmpty)
+              const Text("Nenhum selecionado", style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey))
+            else
+              ...provider.selectedPassadoresList.map((item) => _buildItemRow(
+                '-', 
+                item.component.name,
+                item.component.price,
+                quantity: item.quantity,
+                variation: item.variation,
+              )),
+
+            // --- Lista de Acessórios (NOVO) ---
+            const Padding(
+              padding: EdgeInsets.only(top: 12.0, bottom: 4.0),
+              child: Text("Acessórios:", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
+            ),
+            if (provider.selectedAcessoriosList.isEmpty)
+              const Text("Nenhum selecionado", style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey))
+            else
+              ...provider.selectedAcessoriosList.map((item) => _buildItemRow(
+                '-',
+                item.component.name,
+                item.component.price,
+                quantity: item.quantity,
+                variation: item.variation,
+              )),
           ],
         ),
 
@@ -76,15 +127,13 @@ class SummaryStep extends StatelessWidget {
           title: 'Personalização',
           icon: Icons.brush_outlined,
           children: [
-            _buildItemRow(
-              'Cor da Linha:',
-              provider.corLinha,
-              null,
-            ),
+            // Campo Cor da Linha REMOVIDO conforme solicitado
+            
             _buildItemRow(
               'Gravação:',
               provider.gravacao,
-              provider.gravacao.isNotEmpty ? provider.customizationPrice : null, 
+              // Preço dinâmico vindo do provider
+              provider.gravacao.isNotEmpty ? provider.customizationPrice : null,
             ),
           ],
         ),
@@ -96,7 +145,7 @@ class SummaryStep extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: const Color(0xFF263238), // Fundo Escuro para destaque
+              color: const Color(0xFF263238), // Fundo Escuro
               borderRadius: BorderRadius.circular(12),
               boxShadow: [
                 BoxShadow(
@@ -128,22 +177,6 @@ class SummaryStep extends StatelessWidget {
               ],
             ),
           ),
-
-          if (isAdmin) ...[
-          const SizedBox(height: 32),
-          AdminProfitReport(
-            blank: provider.selectedBlank,
-            cabo: provider.selectedCabo,
-            caboQty: provider.caboQuantity,
-            reelSeat: provider.selectedReelSeat,
-            passadores: provider.selectedPassadores,
-            passadoresQty: provider.passadoresQuantity,
-            // Se a gravação tem custo para você (ex: R$ 5,00 de material), coloque aqui.
-            // Caso contrário, deixe 0.0. O preço de venda é 25.0 se houver texto.
-            gravacaoCost: 0.0, 
-            gravacaoPrice: provider.gravacao.isNotEmpty ? provider.customizationPrice : 0.0,
-          ),
-        ],
         
         if (!isAdmin)
           Container(
@@ -159,7 +192,7 @@ class SummaryStep extends StatelessWidget {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    'Clique em "Solicitar Orçamento". Os valores finais serão confirmados via WhatsApp.',
+                    'Clique em "Solicitar via WhatsApp". Os valores finais e frete serão confirmados pelo fornecedor.',
                     style: TextStyle(
                       color: Colors.blueGrey[800],
                       fontWeight: FontWeight.w500,
@@ -169,27 +202,45 @@ class SummaryStep extends StatelessWidget {
               ],
             ),
           ),
+
+        // --- SEÇÃO 5: RELATÓRIO DE LUCRATIVIDADE (SÓ ADMIN) ---
+        if (isAdmin) ...[
+          const SizedBox(height: 32),
+          AdminProfitReport(
+            blank: provider.selectedBlank,
+            blankVar: provider.selectedBlankVariation,
+            
+            cabo: provider.selectedCabo,
+            caboQty: provider.caboQuantity,
+            caboVar: provider.selectedCaboVariation,
+            
+            reelSeat: provider.selectedReelSeat,
+            reelSeatVar: provider.selectedReelSeatVariation,
+            
+            passadoresList: passadoresForReport,
+            acessoriosList: acessoriosForReport, // (NOVO)
+            
+            gravacaoCost: 0.0,
+            gravacaoPrice: provider.gravacao.isNotEmpty ? provider.customizationPrice : 0.0,
+          ),
+        ],
           
-        // Espaço extra no final para não ficar colado no botão inferior
         const SizedBox(height: 80),
       ],
     );
   }
 
-  // Helper para criar os Cartões Brancos
+  // --- HELPERS ---
+
   Widget _buildSectionCard({required String title, required IconData icon, required List<Widget> children}) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white, // Fundo Branco
+        color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.grey[300]!),
         boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          )
+          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 2))
         ],
       ),
       child: Column(
@@ -201,12 +252,7 @@ class SummaryStep extends StatelessWidget {
               const SizedBox(width: 8),
               Text(
                 title.toUpperCase(),
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                  letterSpacing: 1.0,
-                  color: Colors.blueGrey[700],
-                ),
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, letterSpacing: 1.0, color: Colors.blueGrey[700]),
               ),
             ],
           ),
@@ -217,44 +263,28 @@ class SummaryStep extends StatelessWidget {
     );
   }
 
-  // Linha simples
   Widget _buildSummaryRow(String title, String value) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6.0),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(
-            width: 80,
-            child: Text(
-              title, 
-              style: TextStyle(
-                color: Colors.grey[600], // Cinza médio (legível no branco)
-                fontWeight: FontWeight.w500
-              )
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value, 
-              style: const TextStyle(
-                fontSize: 15,
-                color: Colors.black87, // Preto suave (alto contraste)
-                fontWeight: FontWeight.w600
-              )
-            ),
-          ),
+          SizedBox(width: 80, child: Text(title, style: TextStyle(color: Colors.grey[600], fontWeight: FontWeight.w500))),
+          Expanded(child: Text(value, style: const TextStyle(fontSize: 15, color: Colors.black87, fontWeight: FontWeight.w600))),
         ],
       ),
     );
   }
 
-  // Linha de item com preço
-  Widget _buildItemRow(String title, String? value, double? price, {int quantity = 1}) {
+  Widget _buildItemRow(String title, String? value, double? price, {int quantity = 1, String? variation}) {
     value = (value == null || value.isEmpty) ? 'Não selecionado' : value;
     
+    if (variation != null && variation.isNotEmpty) {
+      value += " ($variation)";
+    }
+
     if (quantity > 1) {
-      value = "$value ($quantity un)";
+      value += " ($quantity un)";
     }
     
     double? finalPrice = price;
@@ -263,7 +293,7 @@ class SummaryStep extends StatelessWidget {
     }
     
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0), // Mais espaço
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -273,33 +303,19 @@ class SummaryStep extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title, 
-                  style: TextStyle(color: Colors.grey[600], fontSize: 12)
-                ),
+                if (title != '-')
+                  Text(title, style: TextStyle(color: Colors.grey[600], fontSize: 12)),
                 const SizedBox(height: 2),
-                Text(
-                  value, 
-                  style: const TextStyle(
-                    fontSize: 16, 
-                    color: Colors.black87,
-                    fontWeight: FontWeight.w600
-                  )
-                ),
+                Text(value, style: const TextStyle(fontSize: 16, color: Colors.black87, fontWeight: FontWeight.w600)),
               ],
             ),
           ),
-          
           if (isAdmin && finalPrice != null && finalPrice > 0)
             Expanded(
               flex: 1,
               child: Text(
                 'R\$ ${finalPrice.toStringAsFixed(2)}',
-                style: TextStyle(
-                  fontSize: 15,
-                  color: Colors.blueGrey[800],
-                  fontWeight: FontWeight.bold
-                ),
+                style: TextStyle(fontSize: 15, color: Colors.blueGrey[800], fontWeight: FontWeight.bold),
                 textAlign: TextAlign.right,
               ),
             ),

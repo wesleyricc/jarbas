@@ -22,8 +22,9 @@ class _AdminComponentsScreenState extends State<AdminComponentsScreen> {
   final Map<String, String> _categoriesMap = {
     'blank': 'Blank',
     'cabo': 'Cabo',
+    'reel_seat': 'Reel Seat',
     'passadores': 'Passadores',
-    'reel_seat': 'Reel Seat'
+    'acessorios': 'Acessórios', // NOVA CATEGORIA
   };
 
   @override

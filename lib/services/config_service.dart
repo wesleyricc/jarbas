@@ -37,7 +37,7 @@ class ConfigService {
     await _firestore.collection(_collection).doc(_doc).set({
       'defaultMargin': defaultMargin,
       'customizationPrice': customizationPrice,
-      'supplierPhone': supplierPhone.replaceAll(RegExp(r'[^\d]'), ''), // Salva apenas números
+      'supplierPhone': supplierPhone.replaceAll(RegExp(r'[^\d]'), ''),
     }, SetOptions(merge: true));
   }
 }
