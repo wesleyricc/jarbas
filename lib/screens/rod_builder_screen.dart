@@ -233,6 +233,7 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
         return ComponentSelector(
           category: 'blank',
           selectedComponent: provider.selectedBlank,
+          selectedVariation: provider.selectedBlankVariation,
           isAdmin: isAdmin,
           // --- CORREÇÃO: Aceita (c, v) ---
           onSelect: (component, variation) => provider.selectBlank(component, variation: variation),
@@ -242,6 +243,7 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
         return ComponentSelector(
           category: 'cabo',
           selectedComponent: provider.selectedCabo,
+          selectedVariation: provider.selectedCaboVariation,
           isAdmin: isAdmin,
           quantity: provider.caboQuantity,
           onQuantityChanged: (val) => provider.setCaboQuantity(val),
@@ -253,6 +255,7 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
         return ComponentSelector(
           category: 'reel_seat',
           selectedComponent: provider.selectedReelSeat,
+          selectedVariation: provider.selectedReelSeatVariation,
           isAdmin: isAdmin,
           // --- CORREÇÃO: Aceita (c, v) ---
           onSelect: (component, variation) => provider.selectReelSeat(component, variation: variation),

@@ -416,6 +416,7 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
             ComponentSelector(
               category: 'blank',
               selectedComponent: _selectedBlank,
+              selectedVariation: _blankVar,
               isAdmin: true,
               onSelect: (c, v) => setState(() { _selectedBlank = c; _blankVar = v; }),
             ),
@@ -426,6 +427,7 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
             ComponentSelector(
               category: 'cabo',
               selectedComponent: _selectedCabo,
+              selectedVariation: _caboVar,
               isAdmin: true,
               quantity: _caboQty,
               onQuantityChanged: (v) => setState(() => _caboQty = v),
@@ -438,6 +440,7 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
             ComponentSelector(
               category: 'reel_seat',
               selectedComponent: _selectedReelSeat,
+              selectedVariation: _reelSeatVar,
               isAdmin: true,
               onSelect: (c, v) => setState(() { _selectedReelSeat = c; _reelSeatVar = v; }),
             ),

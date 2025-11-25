@@ -25,6 +25,8 @@ class _AdminMassUpdateScreenState extends State<AdminMassUpdateScreen> {
   List<Component> _currentFilteredList = [];
 
   double _defaultMargin = 0.0;
+  double _supplierDiscount = 0.0; // (NOVO)
+  
   bool _isLoading = false;
 
   final Map<String, String> _categoriesMap = {
@@ -50,6 +52,7 @@ class _AdminMassUpdateScreenState extends State<AdminMassUpdateScreen> {
     if (mounted) {
       setState(() {
         _defaultMargin = (settings['defaultMargin'] ?? 0.0).toDouble();
+        _supplierDiscount = (settings['supplierDiscount'] ?? 0.0).toDouble(); // (NOVO)
       });
     }
   }
@@ -78,7 +81,6 @@ class _AdminMassUpdateScreenState extends State<AdminMassUpdateScreen> {
   }
 
   Future<void> _applyUpdate() async {
-    // CORREÇÃO: Validação permite negativos agora
     double percent = double.tryParse(_percentController.text) ?? 0.0;
     
     if (percent == 0) {
@@ -101,11 +103,15 @@ class _AdminMassUpdateScreenState extends State<AdminMassUpdateScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Confirmar Reajuste'),
-        content: Text(
-          'Você selecionou ${_selectedIds.length} itens.\n\n'
-          'O custo será $actionText em $percent%.\n'
-          'O preço de venda será recalculado automaticamente mantendo a margem de $_defaultMargin%.\n\n'
-          'Confirma?'
+        content: SingleChildScrollView(
+          child: Text(
+            'Você selecionou ${_selectedIds.length} itens.\n\n'
+            'O Preço de TABELA será $actionText em $percent%.\n\n'
+            'O sistema recalculará:\n'
+            '1. Custo (Tabela - $_supplierDiscount%)\n'
+            '2. Venda (Custo + $_defaultMargin%)\n\n'
+            'Confirma?'
+          ),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
@@ -127,6 +133,7 @@ class _AdminMassUpdateScreenState extends State<AdminMassUpdateScreen> {
           componentsToUpdate: toUpdate,
           increasePercent: percent,
           currentMargin: _defaultMargin,
+          supplierDiscount: _supplierDiscount, // (NOVO) Passa o desconto
         );
 
         if (mounted) {
@@ -148,6 +155,7 @@ class _AdminMassUpdateScreenState extends State<AdminMassUpdateScreen> {
       body: SafeArea(
         child: Column(
           children: [
+            // Cabeçalho de Filtros
             Container(
               color: Colors.white,
               constraints: const BoxConstraints(maxHeight: 240),
@@ -162,11 +170,10 @@ class _AdminMassUpdateScreenState extends State<AdminMassUpdateScreen> {
                           flex: 2,
                           child: TextField(
                             controller: _percentController,
-                            keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true), // Aceita sinal negativo
-                            // CORREÇÃO: Regex aceita sinal de menos opcional no início ^-?
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
                             inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^-?\d*\.?\d{0,2}'))],
                             decoration: const InputDecoration(
-                              labelText: 'Ajuste (%)', // Texto genérico (Ajuste em vez de Aumento)
+                              labelText: 'Ajuste (%)',
                               hintText: 'Ex: 10 ou -5',
                               suffixText: '%',
                               border: OutlineInputBorder(),
@@ -251,6 +258,7 @@ class _AdminMassUpdateScreenState extends State<AdminMassUpdateScreen> {
             ),
             const Divider(height: 1),
 
+            // Lista
             Expanded(
               child: _isLoading 
                 ? const Center(child: CircularProgressIndicator())
@@ -281,12 +289,24 @@ class _AdminMassUpdateScreenState extends State<AdminMassUpdateScreen> {
                             value: isSelected,
                             onChanged: (_) => _toggleItem(comp.id),
                             title: Text(comp.name, style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14)),
-                            subtitle: Text("Custo: R\$ ${comp.costPrice.toStringAsFixed(2)}  |  Venda: R\$ ${comp.price.toStringAsFixed(2)}"),
+                            // --- CORREÇÃO VISUAL AQUI ---
+                            subtitle: Padding(
+                              padding: const EdgeInsets.only(top: 4.0),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  _priceTag("Tab.", comp.supplierPrice, Colors.grey[700]!),
+                                  _priceTag("Custo", comp.costPrice, Colors.blue[800]!),
+                                  _priceTag("Venda", comp.price, Colors.green[800]!),
+                                ],
+                              ),
+                            ),
+                            // -----------------------------
                             secondary: comp.imageUrl.isNotEmpty 
                                 ? ClipRRect(borderRadius: BorderRadius.circular(4), child: Image.network(comp.imageUrl, width: 40, height: 40, fit: BoxFit.cover))
                                 : const Icon(Icons.image, color: Colors.grey),
                             activeColor: Colors.orange[800],
-                            dense: true,
+                            dense: false, // Aumentei um pouco a altura para caber os preços
                           );
                         },
                       );
@@ -296,6 +316,20 @@ class _AdminMassUpdateScreenState extends State<AdminMassUpdateScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  // Helper para as etiquetas de preço
+  Widget _priceTag(String label, double value, Color color) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: TextStyle(fontSize: 10, color: Colors.grey[600])),
+        Text(
+          "R\$ ${value.toStringAsFixed(2)}", 
+          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: color)
+        ),
+      ],
     );
   }
 }

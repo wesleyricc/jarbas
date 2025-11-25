@@ -1,7 +1,7 @@
 import 'dart:typed_data'; // Para Uint8List (essencial para Web)
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; // Para InputFormatters
-import 'package:image_picker/image_picker.dart'; // (CORREÇÃO MOBILE) Importe o ImagePicker
+import 'package:image_picker/image_picker.dart'; // Importe o ImagePicker
 import 'package:url_launcher/url_launcher.dart'; // Para abrir links
 import '../../../models/component_model.dart';
 import '../../../services/component_service.dart';
@@ -27,19 +27,21 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
 
   bool _isLoading = false;
 
-  // Controladores de Texto Básicos
+  // Controladores de Texto
   late TextEditingController _nameController;
   late TextEditingController _descController;
-  late TextEditingController _priceController;     // Preço de Venda
-  late TextEditingController _costPriceController; // Preço de Custo
-  late TextEditingController _stockController;     // Estoque Total
+  
+  // Controladores de Preço
+  late TextEditingController _supplierPriceController; 
+  late TextEditingController _costPriceController;     
+  late TextEditingController _priceController;         
+  
+  late TextEditingController _stockController;
   late TextEditingController _supplierLinkController;
   
   String? _selectedCategoryKey;
 
-  // --- VARIAÇÕES (NOVO) ---
-  // Lista local para manipular as variações na tela
-  // Cada item é um Map { 'name': Controller, 'stock': Controller }
+  // Variações (Lista Local)
   List<Map<String, TextEditingController>> _variationsControllers = [];
 
   // Estado da Imagem
@@ -49,16 +51,17 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
   Uint8List? _newImageBytes; 
   String? _newImageExtension;
 
-  // Configuração Global
+  // Configurações Globais
   double _defaultMargin = 0.0; 
+  double _supplierDiscount = 0.0;
 
   // Mapa de categorias
   final Map<String, String> _categoriesMap = {
     'blank': 'Blank',
     'cabo': 'Cabo',
-    'reel_seat': 'Reel Seat',
     'passadores': 'Passadores',
-    'acessorios': 'Acessórios', // NOVA CATEGORIA
+    'reel_seat': 'Reel Seat',
+    'acessorios': 'Acessórios'
   };
 
   @override
@@ -67,15 +70,18 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
     // Inicializa os controladores
     _nameController = TextEditingController(text: widget.component?.name ?? '');
     _descController = TextEditingController(text: widget.component?.description ?? '');
-    _priceController = TextEditingController(text: widget.component?.price.toString() ?? '');
+    
+    _supplierPriceController = TextEditingController(text: widget.component?.supplierPrice.toString() ?? '');
     _costPriceController = TextEditingController(text: widget.component?.costPrice.toString() ?? '');
+    _priceController = TextEditingController(text: widget.component?.price.toString() ?? '');
+    
     _stockController = TextEditingController(text: widget.component?.stock.toString() ?? '');
     _supplierLinkController = TextEditingController(text: widget.component?.supplierLink ?? '');
     
     _selectedCategoryKey = widget.component?.category;
     _currentImageUrl = widget.component?.imageUrl;
 
-    // 1. Carrega as Variações Existentes (se houver)
+    // 1. Carrega as Variações Existentes
     if (widget.component != null && widget.component!.variations.isNotEmpty) {
       widget.component!.variations.forEach((key, value) {
         _variationsControllers.add({
@@ -85,8 +91,10 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
       });
     }
 
-    // 2. Carrega Configurações e Adiciona Listener de Preço
+    // 2. Carrega Configurações e Adiciona Listeners
     _loadSettings();
+    
+    _supplierPriceController.addListener(_calculateCostPrice);
     _costPriceController.addListener(_calculateSellingPrice);
   }
 
@@ -96,6 +104,7 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
       if (mounted) {
         setState(() {
           _defaultMargin = (settings['defaultMargin'] ?? 0.0).toDouble();
+          _supplierDiscount = (settings['supplierDiscount'] ?? 0.0).toDouble();
         });
       }
     } catch (e) {
@@ -104,20 +113,36 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
   }
 
   // --- LÓGICA DE PREÇO ---
+
+  void _calculateCostPrice() {
+    String supplierText = _supplierPriceController.text;
+    if (supplierText.isEmpty) return;
+
+    double supplierVal = double.tryParse(supplierText) ?? 0.0;
+    double costVal = supplierVal * (1 - (_supplierDiscount / 100));
+
+    String newText = costVal.toStringAsFixed(2);
+    if (_costPriceController.text != newText) {
+      _costPriceController.text = newText;
+    }
+  }
+
   void _calculateSellingPrice() {
     String costText = _costPriceController.text;
     if (costText.isEmpty) return;
-    if (_defaultMargin <= 0) return; // Se margem 0, permite edição manual livre
+    if (_defaultMargin <= 0) return; 
 
     double cost = double.tryParse(costText) ?? 0.0;
     double sellingPrice = cost * (1 + (_defaultMargin / 100));
 
-    _priceController.text = sellingPrice.toStringAsFixed(2);
+    String newText = sellingPrice.toStringAsFixed(2);
+    if (_priceController.text != newText) {
+      _priceController.text = newText;
+    }
   }
 
   // --- LÓGICA DE VARIAÇÕES ---
   
-  // Recalcula o estoque total somando as variações
   void _updateTotalStock() {
     if (_variationsControllers.isEmpty) return;
     
@@ -131,11 +156,7 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
 
   void _addVariationRow() {
     setState(() {
-      // Cria controladores novos
       final stockCtrl = TextEditingController(text: '0');
-      
-      // Adiciona listener para atualizar o total sempre que mudar este campo
-      // (Usamos uma closure para capturar o contexto)
       stockCtrl.addListener(() => _updateTotalStock());
 
       _variationsControllers.add({
@@ -150,26 +171,23 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
       _variationsControllers[index]['name']?.dispose();
       _variationsControllers[index]['stock']?.dispose();
       _variationsControllers.removeAt(index);
-      
-      // Se removeu tudo, o campo de estoque total volta a ser editável,
-      // então mantemos o valor que estava ou zeramos, conforme preferência.
-      // Vamos manter o valor calculado.
       _updateTotalStock(); 
     });
   }
 
   @override
   void dispose() {
+    _supplierPriceController.removeListener(_calculateCostPrice);
     _costPriceController.removeListener(_calculateSellingPrice);
     
     _nameController.dispose();
     _descController.dispose();
-    _priceController.dispose();
+    _supplierPriceController.dispose();
     _costPriceController.dispose();
+    _priceController.dispose();
     _stockController.dispose();
     _supplierLinkController.dispose();
     
-    // Limpa controladores das variações
     for (var v in _variationsControllers) {
       v['name']?.dispose();
       v['stock']?.dispose();
@@ -178,14 +196,11 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
     super.dispose();
   }
 
-  // --- LÓGICA DE IMAGEM (CORRIGIDA PARA MOBILE) ---
+  // --- IMAGEM ---
 
   Future<void> _pickImage() async {
-    // NÃO use FocusScope.unfocus() aqui, pois quebra no mobile web
     try {
       final ImagePicker picker = ImagePicker();
-      
-      // Chama a galeria diretamente
       final XFile? image = await picker.pickImage(
         source: ImageSource.gallery,
         maxWidth: 800, 
@@ -236,7 +251,6 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
     String? oldImageUrl = widget.component?.imageUrl;
 
     try {
-      // 1. Upload Imagem
       if (_newImageBytes != null && _newImageExtension != null) {
         setState(() { _isUploading = true; _uploadProgress = 0.0; });
         
@@ -256,7 +270,6 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
         setState(() { _isUploading = false; });
       }
 
-      // 2. Processar Variações
       Map<String, int> variationsMap = {};
       for (var v in _variationsControllers) {
         String name = v['name']!.text.trim();
@@ -266,27 +279,27 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
         }
       }
 
-      // Se tem variações, o estoque é a soma. Se não, usa o campo manual.
       int finalStock = variationsMap.isNotEmpty 
           ? variationsMap.values.fold(0, (sum, item) => sum + item)
           : (int.tryParse(_stockController.text) ?? 0);
 
-      // 3. Criar Objeto
       final component = Component(
         id: widget.component?.id ?? '',
         name: _nameController.text,
         description: _descController.text,
         category: _selectedCategoryKey!,
-        price: double.tryParse(_priceController.text) ?? 0.0,
+        
+        supplierPrice: double.tryParse(_supplierPriceController.text) ?? 0.0,
         costPrice: double.tryParse(_costPriceController.text) ?? 0.0,
+        price: double.tryParse(_priceController.text) ?? 0.0,
+        
         stock: finalStock,
-        variations: variationsMap, // Novo campo
+        variations: variationsMap,
         imageUrl: imageUrlToSave,
         attributes: widget.component?.attributes ?? {},
         supplierLink: _supplierLinkController.text,
       );
 
-      // 4. Salvar no Firestore
       if (widget.component == null) {
         await _componentService.addComponent(component);
       } else {
@@ -337,6 +350,8 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
     }
   }
 
+  // --- UI ---
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -358,7 +373,7 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // IMAGEM
+              // 1. IMAGEM
               _buildImagePreview(),
               const SizedBox(height: 16),
               ElevatedButton.icon(
@@ -375,7 +390,7 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
               
               const Divider(height: 32),
               
-              // CATEGORIA
+              // 2. CATEGORIA
               DropdownButtonFormField<String>(
                 value: _selectedCategoryKey,
                 hint: const Text('Categoria'),
@@ -387,7 +402,7 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
               
               const SizedBox(height: 16),
               
-              // NOME & DESCRIÇÃO
+              // 3. NOME E DESCRIÇÃO
               TextFormField(
                 controller: _nameController,
                 decoration: const InputDecoration(labelText: 'Nome', border: OutlineInputBorder()),
@@ -400,18 +415,38 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
                 maxLines: 2,
               ),
 
+              const SizedBox(height: 24),
+              const Text("Precificação", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              const SizedBox(height: 16),
+
+              // 4. FORNECEDOR
+              TextFormField(
+                controller: _supplierPriceController,
+                decoration: const InputDecoration(
+                  labelText: 'Preço Tabela Fornecedor',
+                  prefixText: 'R\$ ',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}'))],
+              ),
+              
               const SizedBox(height: 16),
               
-              // PREÇOS
+              // 5. CUSTO E VENDA (Lado a Lado)
               Row(
                 children: [
+                  // CUSTO (Agora com Helper do Desconto)
                   Expanded(
                     child: TextFormField(
                       controller: _costPriceController,
                       decoration: InputDecoration(
                         labelText: 'Custo (R\$)', 
                         border: const OutlineInputBorder(),
-                        //fillColor: Color(0xFFFFFDE7), filled: true,
+                        //fillColor: const Color(0xFFFFFDE7), 
+                        filled: true,
+                        // --- AQUI: Helper de Desconto ---
+                        helperText: _supplierDiscount > 0 ? 'Desconto: ${_supplierDiscount.toStringAsFixed(0)}%' : null,
                       ),
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
                       inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}'))],
@@ -419,13 +454,15 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
                     ),
                   ),
                   const SizedBox(width: 16),
+                  // VENDA (Com Helper de Margem)
                   Expanded(
                     child: TextFormField(
                       controller: _priceController,
                       decoration: InputDecoration(
                         labelText: 'Venda (R\$)',
                         border: const OutlineInputBorder(),
-                        //helperText: _defaultMargin > 0 ? 'Margem: ${_defaultMargin.toStringAsFixed(0)}%' : null,
+                        // --- Helper de Margem ---
+                        helperText: _defaultMargin > 0 ? 'Margem: ${_defaultMargin.toStringAsFixed(0)}%' : null,
                       ),
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
                       inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}'))],
@@ -437,7 +474,7 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
 
               const Divider(height: 32),
               
-              // --- ESTOQUE E VARIAÇÕES ---
+              // 6. ESTOQUE E VARIAÇÕES
               const Text("Estoque e Variações", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
               const SizedBox(height: 8),
 
@@ -482,7 +519,6 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
                       ),
                       const SizedBox(height: 8),
                       
-                      // Lista de Variações
                       ..._variationsControllers.asMap().entries.map((entry) {
                         int idx = entry.key;
                         var ctrl = entry.value;
@@ -504,7 +540,7 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
                                   controller: ctrl['stock'],
                                   keyboardType: TextInputType.number,
                                   decoration: const InputDecoration(hintText: '0', isDense: true, border: OutlineInputBorder()),
-                                  onChanged: (_) => _updateTotalStock(), // Atualiza total em tempo real
+                                  onChanged: (_) => _updateTotalStock(), 
                                 ),
                               ),
                               IconButton(
@@ -519,7 +555,7 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
                       TextButton.icon(
                         onPressed: _addVariationRow, 
                         icon: const Icon(Icons.add), 
-                        label: const Text("Adicionar Variação", style: TextStyle(color: Colors.grey))
+                        label: const Text("Adicionar Variação")
                       ),
                       
                       const Divider(),
@@ -536,6 +572,8 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
               ],
 
               const SizedBox(height: 16),
+              
+              // 7. LINK
               TextFormField(
                 controller: _supplierLinkController, 
                 decoration: const InputDecoration(labelText: 'Link do Fornecedor', border: OutlineInputBorder(), suffixIcon: Icon(Icons.link))
@@ -547,6 +585,8 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
                  ),
 
               const SizedBox(height: 32),
+              
+              // 8. BOTÃO SALVAR
               _isLoading 
                 ? const Center(child: CircularProgressIndicator())
                 : ElevatedButton(

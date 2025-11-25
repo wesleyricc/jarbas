@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../services/config_service.dart';
-import '../../services/component_service.dart'; // (NOVO)
+import '../../services/component_service.dart';
 import 'admin_mass_update_screen.dart';
 
 class AdminSettingsScreen extends StatefulWidget {
@@ -12,24 +12,17 @@ class AdminSettingsScreen extends StatefulWidget {
 }
 
 class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
+  // Serviços
   final ConfigService _configService = ConfigService();
-  final ComponentService _componentService = ComponentService(); // (NOVO)
+  final ComponentService _componentService = ComponentService();
   
+  // Controladores de Texto
   final TextEditingController _marginController = TextEditingController();
+  final TextEditingController _discountController = TextEditingController();
   final TextEditingController _customizationPriceController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
   
   bool _isLoading = true;
-
-  // Opções de Categoria para o filtro de aumento
-  final Map<String, String> _categoriesMap = {
-    'todos': 'Todos os Itens',
-    'blank': 'Blanks',
-    'cabo': 'Cabos',
-    'passadores': 'Passadores',
-    'reel_seat': 'Reel Seats',
-    'acessorios': 'Acessórios',
-  };
 
   @override
   void initState() {
@@ -37,37 +30,57 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
     _loadSettings();
   }
 
+  @override
+  void dispose() {
+    _marginController.dispose();
+    _discountController.dispose();
+    _customizationPriceController.dispose();
+    _phoneController.dispose();
+    super.dispose();
+  }
+
+  // Carrega configurações do Firestore
   Future<void> _loadSettings() async {
     final settings = await _configService.getSettings();
+    
     setState(() {
       _marginController.text = (settings['defaultMargin'] ?? 0.0).toString();
+      _discountController.text = (settings['supplierDiscount'] ?? 0.0).toString();
       _customizationPriceController.text = (settings['customizationPrice'] ?? 25.0).toString();
       _phoneController.text = (settings['supplierPhone'] ?? '').toString();
       _isLoading = false;
     });
   }
 
+  // Salva configurações no Firestore
   Future<void> _saveSettings() async {
     setState(() => _isLoading = true);
-    double margin = double.tryParse(_marginController.text) ?? 0.0;
-    double customPrice = double.tryParse(_customizationPriceController.text) ?? 0.0;
-    String phone = _phoneController.text.trim();
     
     try {
       await _configService.saveSettings(
-        defaultMargin: margin,
-        customizationPrice: customPrice,
-        supplierPhone: phone,
+        defaultMargin: double.tryParse(_marginController.text) ?? 0.0,
+        supplierDiscount: double.tryParse(_discountController.text) ?? 0.0,
+        customizationPrice: double.tryParse(_customizationPriceController.text) ?? 0.0,
+        supplierPhone: _phoneController.text.trim(),
       );
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Salvo!'), backgroundColor: Colors.green));
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Configurações salvas com sucesso!'), backgroundColor: Colors.green),
+        );
+      }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro: $e'), backgroundColor: Colors.red));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro ao salvar: $e'), backgroundColor: Colors.red),
+        );
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  // --- AÇÃO 1: RECALCULAR VENDA (Baseado na margem atual) ---
+  // Ação: Recalcular Preço de Venda de TODOS os itens
   Future<void> _recalculateAllSellingPrices() async {
     double margin = double.tryParse(_marginController.text) ?? 0.0;
 
@@ -75,9 +88,15 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Atenção: Reprocessamento'),
-        content: Text('Isso irá atualizar o PREÇO DE VENDA de TODOS os componentes do catálogo baseando-se no custo atual de cada um e na margem de $margin%.\n\nDeseja continuar?'),
+        content: Text(
+          'Isso irá atualizar o PREÇO DE VENDA de TODOS os componentes do catálogo baseando-se no custo atual de cada um e na margem de $margin%.\n\n'
+          'Esta ação não pode ser desfeita.\n\nDeseja continuar?'
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () => Navigator.pop(ctx, true),
@@ -90,14 +109,15 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
     if (confirm == true) {
       setState(() => _isLoading = true);
       try {
-        // Primeiro salva a configuração para garantir
+        // 1. Salva a configuração primeiro para garantir consistência
         await _configService.saveSettings(
           defaultMargin: margin,
-          customizationPrice: double.tryParse(_customizationPriceController.text) ?? 0,
+          supplierDiscount: double.tryParse(_discountController.text) ?? 0.0,
+          customizationPrice: double.tryParse(_customizationPriceController.text) ?? 0.0,
           supplierPhone: _phoneController.text,
         );
         
-        // Chama o serviço
+        // 2. Chama o serviço de atualização em lote
         await _componentService.batchRecalculateSellingPrices(margin);
         
         if (mounted) {
@@ -113,91 +133,12 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
     }
   }
 
-  // --- AÇÃO 2: AUMENTAR CUSTO EM MASSA ---
-  void _showCostIncreaseDialog() {
-    final percentController = TextEditingController();
-    String selectedCategory = 'todos';
-    double currentMargin = double.tryParse(_marginController.text) ?? 0.0;
-
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder( // Necessário para o Dropdown dentro do Dialog atualizar
-        builder: (context, setDialogState) {
-          return AlertDialog(
-            title: const Text('Reajuste de Custo'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text('Informe o percentual de aumento no custo. O preço de venda será recalculado automaticamente mantendo a margem atual.'),
-                const SizedBox(height: 16),
-                
-                // Percentual
-                TextField(
-                  controller: percentController,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}'))],
-                  decoration: const InputDecoration(
-                    labelText: 'Aumento (%)',
-                    hintText: 'Ex: 10 para +10%',
-                    suffixText: '%',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                // Filtro de Categoria
-                DropdownButtonFormField<String>(
-                  value: selectedCategory,
-                  decoration: const InputDecoration(labelText: 'Aplicar em:', border: OutlineInputBorder()),
-                  items: _categoriesMap.entries.map((e) => DropdownMenuItem(value: e.key, child: Text(e.value))).toList(),
-                  onChanged: (v) => setDialogState(() => selectedCategory = v!),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey[800]),
-                onPressed: () async {
-                  double percent = double.tryParse(percentController.text) ?? 0.0;
-                  if (percent <= 0) return;
-
-                  Navigator.pop(context); // Fecha diálogo
-                  _executeCostIncrease(percent, selectedCategory, currentMargin);
-                },
-                child: const Text('Aplicar Reajuste', style: TextStyle(color: Colors.white)),
-              ),
-            ],
-          );
-        }
-      ),
-    );
-  }
-
-  Future<void> _executeCostIncrease(double percent, String category, double currentMargin) async {
-    setState(() => _isLoading = true);
-    try {
-      await _componentService.batchIncreaseCostPrices(
-        increasePercent: percent,
-        currentMargin: currentMargin,
-        categoryFilter: category,
-      );
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Custos reajustados em $percent% com sucesso!'), backgroundColor: Colors.green)
-        );
-      }
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro: $e')));
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Configurações Globais')),
+      appBar: AppBar(
+        title: const Text('Configurações Globais'),
+      ),
       body: _isLoading 
         ? const Center(child: CircularProgressIndicator())
         : SingleChildScrollView(
@@ -205,21 +146,40 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildSectionTitle('Margens e Preços'),
+                // --- SEÇÃO 1: PRECIFICAÇÃO ---
+                _buildSectionTitle('Formação de Preços'),
                 
+                // Desconto Fornecedor
+                TextField(
+                  controller: _discountController,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}'))],
+                  decoration: const InputDecoration(
+                    labelText: 'Desconto Padrão do Fornecedor (%)',
+                    hintText: 'Ex: 30',
+                    suffixText: '%',
+                    border: OutlineInputBorder(),
+                    helperText: 'Aplicado sobre o Preço do Fornecedor para calcular o Custo.',
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                // Margem de Lucro
                 TextField(
                   controller: _marginController,
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}'))],
                   decoration: const InputDecoration(
                     labelText: 'Margem de Lucro Padrão (%)',
+                    hintText: 'Ex: 100',
                     suffixText: '%',
                     border: OutlineInputBorder(),
+                    helperText: 'Aplicado sobre o Custo para calcular a Venda.',
                   ),
                 ),
                 const SizedBox(height: 16),
                 
-                // BOTÃO REPROCESSAR MARGEM
+                // Botão Reprocessar Venda
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(
@@ -236,11 +196,12 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                 const Padding(
                   padding: EdgeInsets.only(top: 4, bottom: 24),
                   child: Text(
-                    'Nota: Isso atualizará o preço de venda de todos os itens do catálogo baseado no custo atual e na margem acima.',
+                    'Nota: Aplica a margem acima sobre o custo atual de TODOS os itens.',
                     style: TextStyle(fontSize: 12, color: Colors.grey, fontStyle: FontStyle.italic),
                   ),
                 ),
 
+                // Preço Customização
                 TextField(
                   controller: _customizationPriceController,
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -249,18 +210,21 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                     labelText: 'Preço da Customização (Gravação)',
                     prefixText: 'R\$ ',
                     border: OutlineInputBorder(),
+                    helperText: 'Valor cobrado pela gravação do nome na vara.',
                   ),
                 ),
                 
                 const Divider(height: 48),
                 
-                // --- SEÇÃO MANUTENÇÃO DE CUSTOS ---
-                _buildSectionTitle('Reajuste de Fornecedor'),
+                // --- SEÇÃO 2: MANUTENÇÃO DE CUSTOS ---
+                _buildSectionTitle('Manutenção de Custo'),
                 const Text(
-                  'Use esta opção quando o fornecedor aumentar os preços. Isso aumentará o Custo e o Preço de Venda proporcionalmente.',
+                  'Use esta opção quando houver reajuste de preços por parte do fornecedor. Você poderá selecionar itens específicos ou categorias inteiras.',
                   style: TextStyle(color: Colors.grey),
                 ),
                 const SizedBox(height: 16),
+                
+                // Botão Reajuste em Massa
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
@@ -271,7 +235,6 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 16),
                     ),
-                    // AQUI MUDOU: Navega para a nova tela
                     onPressed: () {
                       Navigator.push(
                         context, 
@@ -280,9 +243,10 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                     },
                   ),
                 ),
-          
 
                 const Divider(height: 48),
+                
+                // --- SEÇÃO 3: CONTATO ---
                 _buildSectionTitle('Contato / WhatsApp'),
 
                 TextField(
@@ -293,10 +257,13 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                     hintText: '5511999999999',
                     prefixIcon: Icon(Icons.phone),
                     border: OutlineInputBorder(),
+                    helperText: 'Use DDD + Número (ex: 5548999999999).',
                   ),
                 ),
 
                 const SizedBox(height: 48),
+                
+                // --- BOTÃO SALVAR ---
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
@@ -305,10 +272,13 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                       backgroundColor: Colors.blueGrey[800],
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 16),
+                      textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                     ),
-                    child: const Text('Salvar Configurações'),
+                    child: const Text('SALVAR CONFIGURAÇÕES'),
                   ),
                 ),
+                
+                const SizedBox(height: 40), // Espaço final
               ],
             ),
           ),
@@ -318,7 +288,10 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
   Widget _buildSectionTitle(String title) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 16.0),
-      child: Text(title, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blueGrey[800])),
+      child: Text(
+        title,
+        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blueGrey[800]),
+      ),
     );
   }
 }

@@ -8,7 +8,7 @@ class ComponentSelector extends StatefulWidget {
   final String category;
   final Component? selectedComponent;
   
-  // Aceita (Component, Variação)
+  final String? selectedVariation; 
   final void Function(Component? component, String? variation) onSelect;
   
   final bool isAdmin;
@@ -19,6 +19,7 @@ class ComponentSelector extends StatefulWidget {
     super.key,
     required this.category,
     required this.selectedComponent,
+    this.selectedVariation,
     required this.onSelect,
     required this.isAdmin,
     this.quantity = 1,
@@ -33,11 +34,9 @@ class _ComponentSelectorState extends State<ComponentSelector> {
   final ComponentService _componentService = ComponentService();
   late Stream<List<Component>> _componentsStream;
   
-  // Controles de Busca
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
 
-  // Cores
   final Color _selectedBackgroundColor = const Color(0xFF263238); 
   final Color _unselectedBackgroundColor = Colors.white; 
   final Color _selectedTextColor = Colors.white; 
@@ -62,7 +61,6 @@ class _ComponentSelectorState extends State<ComponentSelector> {
     super.dispose();
   }
 
-  // --- Métodos Auxiliares ---
   Future<void> _launchSupplierLink(String? url) async {
     if (url == null || url.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Nenhum link cadastrado.'), backgroundColor: Colors.orange));
@@ -203,20 +201,15 @@ class _ComponentSelectorState extends State<ComponentSelector> {
 
         List<Component> allComponents = snapshot.data!;
 
-        // --- FILTRO DA BUSCA (NOME OU DESCRIÇÃO) ---
         List<Component> filteredComponents = allComponents;
         if (_searchQuery.isNotEmpty) {
           final query = _searchQuery.toLowerCase();
           filteredComponents = allComponents.where((comp) {
-            // Verifica Nome
             final nameMatch = comp.name.toLowerCase().contains(query);
-            // Verifica Descrição
             final descMatch = comp.description.toLowerCase().contains(query);
-            
-            return nameMatch || descMatch; // Retorna true se encontrar em qualquer um
+            return nameMatch || descMatch;
           }).toList();
         }
-        // -------------------------------------------
 
         if (allComponents.isEmpty) {
           return Container(
@@ -237,13 +230,7 @@ class _ComponentSelectorState extends State<ComponentSelector> {
                   labelText: 'Buscar ${widget.category}...',
                   prefixIcon: const Icon(Icons.search),
                   suffixIcon: _searchQuery.isNotEmpty 
-                    ? IconButton(
-                        icon: const Icon(Icons.clear), 
-                        onPressed: () {
-                          _searchController.clear();
-                          FocusScope.of(context).unfocus();
-                        }
-                      ) 
+                    ? IconButton(icon: const Icon(Icons.clear), onPressed: () { _searchController.clear(); FocusScope.of(context).unfocus(); }) 
                     : null,
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                   contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
@@ -253,7 +240,7 @@ class _ComponentSelectorState extends State<ComponentSelector> {
               ),
             ),
 
-            // Contador de Quantidade
+            // Contador
             if (widget.onQuantityChanged != null)
               Padding(
                 padding: const EdgeInsets.only(bottom: 16.0),
@@ -280,8 +267,7 @@ class _ComponentSelectorState extends State<ComponentSelector> {
             // Lista de Itens
             if (filteredComponents.isEmpty)
                Container(
-                height: 100,
-                alignment: Alignment.center,
+                height: 100, alignment: Alignment.center,
                 decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey[300]!)),
                 child: const Text("Nenhum item encontrado para esta busca.", style: TextStyle(color: Colors.grey)),
                )
@@ -292,7 +278,11 @@ class _ComponentSelectorState extends State<ComponentSelector> {
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(12),
                   child: ListView.separated(
-                    shrinkWrap: true, padding: EdgeInsets.zero, itemCount: filteredComponents.length,
+                    shrinkWrap: true,
+                    // --- CORREÇÃO AQUI: Padding no final da lista ---
+                    padding: const EdgeInsets.fromLTRB(0, 0, 0, 90),
+                    // -----------------------------------------------
+                    itemCount: filteredComponents.length,
                     separatorBuilder: (c, i) => const Divider(height: 1),
                     itemBuilder: (c, i) => _buildComponentTile(filteredComponents[i], widget.selectedComponent?.id == filteredComponents[i].id),
                   ),
@@ -315,6 +305,12 @@ class _ComponentSelectorState extends State<ComponentSelector> {
     final backgroundColor = isSelected ? _selectedBackgroundColor : _unselectedBackgroundColor;
     final mainTextColor = isSelected ? _selectedTextColor : _unselectedTextColor;
     final subTextColor = isSelected ? Colors.grey[400] : Colors.grey[600];
+    final actionIconColor = isSelected ? Colors.white70 : Colors.grey[600];
+
+    String displayName = component.name;
+    if (isSelected && widget.selectedVariation != null) {
+      displayName += " (${widget.selectedVariation})";
+    }
 
     return Material(
       color: backgroundColor,
@@ -333,11 +329,13 @@ class _ComponentSelectorState extends State<ComponentSelector> {
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // COLUNA 1: IMAGEM
               GestureDetector(
                 onTap: () { if (component.imageUrl.isNotEmpty) _showImageDialog(context, component.imageUrl); },
                 child: Container(
-                  width: 64, height: 64,
+                  width: 70, height: 70, // Um pouco maior
                   decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.grey[300]!)),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(8),
@@ -348,53 +346,80 @@ class _ComponentSelectorState extends State<ComponentSelector> {
                 ),
               ),
               const SizedBox(width: 16),
+              
+              // COLUNA 2: CONTEÚDO EXPANDIDO
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Expanded(
-                          child: Text(component.name, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: mainTextColor), maxLines: 1, overflow: TextOverflow.ellipsis),
+                          child: Text(
+                            displayName,
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: mainTextColor),
+                            softWrap: true, 
+                          ),
                         ),
-                        InkWell(
-                          onTap: () => _showDetailsBottomSheet(context, component),
-                          borderRadius: BorderRadius.circular(20),
-                          child: Padding(padding: const EdgeInsets.all(4.0), child: Icon(Icons.info_outline, size: 20, color: isSelected ? Colors.lightBlueAccent : Colors.blue)),
+                        const SizedBox(width: 8),
+                        Icon(
+                          isSelected ? Icons.check_circle : Icons.radio_button_unchecked,
+                          color: isSelected ? _accentColor : Colors.grey[300], 
+                          size: 28
                         ),
                       ],
                     ),
-                    const SizedBox(height: 4),
-                    Text(component.description, style: TextStyle(fontSize: 13, color: subTextColor), maxLines: 2, overflow: TextOverflow.ellipsis),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Icon(isSelected ? Icons.check_circle : Icons.radio_button_unchecked, color: isSelected ? _accentColor : Colors.grey[400], size: 30),
-                  const SizedBox(height: 8),
-                  if (widget.isAdmin)
-                    Text('R\$ ${component.price.toStringAsFixed(2)}', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: isSelected ? Colors.white : Colors.blueGrey[800])),
-                  if (widget.isAdmin && !isSelected) ...[
-                    const SizedBox(height: 8),
+                    
+                    const SizedBox(height: 6),
+                    
+                    Text(
+                      component.description,
+                      style: TextStyle(fontSize: 13, color: subTextColor),
+                      maxLines: 2, 
+                      overflow: TextOverflow.ellipsis
+                    ),
+
+                    const SizedBox(height: 12),
+
                     Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
                       children: [
-                        if (component.supplierLink != null && component.supplierLink!.isNotEmpty)
-                           InkWell(
-                            onTap: () => _launchSupplierLink(component.supplierLink),
-                            child: const Padding(padding: EdgeInsets.all(4), child: Icon(Icons.link, size: 20, color: Colors.blue)),
+                        if (widget.isAdmin)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 12.0),
+                            child: Text(
+                              'R\$ ${component.price.toStringAsFixed(2)}',
+                              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: isSelected ? Colors.white : Colors.blueGrey[800]),
+                            ),
                           ),
-                        const SizedBox(width: 8),
-                        InkWell(
-                          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (c) => ComponentFormScreen(component: component))),
-                          child: const Padding(padding: EdgeInsets.all(4), child: Icon(Icons.edit_note, size: 22, color: Colors.grey)),
-                        ),
+
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            InkWell(
+                              onTap: () => _showDetailsBottomSheet(context, component),
+                              borderRadius: BorderRadius.circular(20),
+                              child: Padding(padding: const EdgeInsets.all(6), child: Icon(Icons.info_outline, size: 22, color: isSelected ? Colors.lightBlueAccent : Colors.blue)),
+                            ),
+                            
+                            if (widget.isAdmin) ...[
+                              if (component.supplierLink != null && component.supplierLink!.isNotEmpty)
+                                InkWell(
+                                  onTap: () => _launchSupplierLink(component.supplierLink),
+                                  child: Padding(padding: const EdgeInsets.all(6), child: Icon(Icons.link, size: 22, color: actionIconColor)),
+                                ),
+                              InkWell(
+                                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (c) => ComponentFormScreen(component: component))),
+                                child: Padding(padding: const EdgeInsets.all(6), child: Icon(Icons.edit_note, size: 24, color: actionIconColor)),
+                              ),
+                            ]
+                          ],
+                        )
                       ],
                     )
-                  ]
-                ],
+                  ],
+                ),
               ),
             ],
           ),

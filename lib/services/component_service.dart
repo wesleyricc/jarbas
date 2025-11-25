@@ -3,13 +3,13 @@ import '../models/component_model.dart';
 
 class ComponentService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  
-  // Referência para a coleção 'components'
   late final CollectionReference _componentsCollection;
 
   ComponentService() {
     _componentsCollection = _firestore.collection('components');
   }
+
+  // --- LEITURA ---
 
   /// Retorna um Stream de todos os componentes.
   Stream<List<Component>> getComponentsStream() {
@@ -32,28 +32,11 @@ class ComponentService {
     });
   }
 
-  /// Adiciona um novo componente (mais usado pelo painel admin)
-  Future<void> addComponent(Component component) {
-    return _componentsCollection.add(component.toMap());
-  }
-
-  /// Atualiza um componente existente
-  Future<void> updateComponent(String id, Component component) {
-    return _componentsCollection.doc(id).update(component.toMap());
-  }
-
-  /// Exclui um componente
-  Future<void> deleteComponent(String id) {
-    return _componentsCollection.doc(id).delete();
-  }
-
-  // --- NOVO MÉTODO (MOVIDO E CORRIGIDO) ---
   /// Busca um componente pelo nome (usado no editor de orçamento)
   Future<Component?> getComponentByName(String? name) async {
     if (name == null || name.isEmpty) return null;
     
     try {
-      // Agora tem acesso ao _componentsCollection
       final query = await _componentsCollection
           .where('name', isEqualTo: name)
           .limit(1)
@@ -69,11 +52,28 @@ class ComponentService {
     }
   }
 
-  // --- NOVOS MÉTODOS DE ATUALIZAÇÃO EM MASSA ---
+  // --- ESCRITA (CRUD) ---
 
-  /// 1. Recalcula o Preço de Venda de TODOS os itens baseado na nova margem
+  /// Adiciona um novo componente
+  Future<void> addComponent(Component component) {
+    return _componentsCollection.add(component.toMap());
+  }
+
+  /// Atualiza um componente existente
+  Future<void> updateComponent(String id, Component component) {
+    return _componentsCollection.doc(id).update(component.toMap());
+  }
+
+  /// Exclui um componente
+  Future<void> deleteComponent(String id) {
+    return _componentsCollection.doc(id).delete();
+  }
+
+  // --- MÉTODOS DE ATUALIZAÇÃO EM MASSA (BATCH) ---
+
+  /// 1. Recalcula APENAS o Preço de Venda de TODOS os itens
+  /// Baseado no Custo Atual (que não muda) e na Nova Margem informada.
   Future<void> batchRecalculateSellingPrices(double marginPercent) async {
-    // Busca todos os componentes
     final snapshot = await _componentsCollection.get();
     
     WriteBatch batch = _firestore.batch();
@@ -85,7 +85,7 @@ class ComponentService {
       
       // Se o custo for 0, não faz sentido aplicar margem
       if (cost > 0) {
-        // Fórmula: Custo + (Custo * Margem%)
+        // Fórmula: Custo * (1 + Margem%)
         double newSellingPrice = cost * (1 + (marginPercent / 100));
         
         // Arredonda para 2 casas decimais
@@ -94,7 +94,7 @@ class ComponentService {
         batch.update(doc.reference, {'price': newSellingPrice});
         count++;
 
-        // Firestore limita batch a 500 ops. Se passar, commita e abre outro.
+        // Firestore limita batch a 500 operações.
         if (count % 400 == 0) {
           await batch.commit();
           batch = _firestore.batch();
@@ -105,83 +105,47 @@ class ComponentService {
     if (count > 0) await batch.commit();
   }
 
-  // --- NOVO MÉTODO: Atualização em Lote por Lista Específica ---
+  /// 2. Reajuste em Massa Completo (Cascata)
+  /// Atualiza: Fornecedor -> Custo -> Venda
   Future<void> batchUpdateSpecificComponents({
     required List<Component> componentsToUpdate,
-    required double increasePercent,
-    required double currentMargin,
+    required double increasePercent, // Percentual de aumento/redução
+    required double currentMargin,   // Margem de Lucro Global (%)
+    required double supplierDiscount, // Desconto do Fornecedor Global (%)
   }) async {
     WriteBatch batch = _firestore.batch();
     int count = 0;
 
     for (var comp in componentsToUpdate) {
-      double currentCost = comp.costPrice;
+      double currentSupplierPrice = comp.supplierPrice;
       
-      // Se custo for 0, não altera, ou assume que o aumento é sobre 0 (continua 0)
-      if (currentCost > 0) {
-        // 1. Novo Custo
-        double newCost = currentCost * (1 + (increasePercent / 100));
-        newCost = double.parse(newCost.toStringAsFixed(2));
-
-        // 2. Nova Venda (Mantendo a margem configurada)
-        double newSellingPrice = newCost * (1 + (currentMargin / 100));
-        newSellingPrice = double.parse(newSellingPrice.toStringAsFixed(2));
-
-        batch.update(_componentsCollection.doc(comp.id), {
-          'costPrice': newCost,
-          'price': newSellingPrice
-        });
-
-        count++;
-        // Batch limit safety
-        if (count % 400 == 0) {
-          await batch.commit();
-          batch = _firestore.batch();
-        }
-      }
-    }
-
-    if (count > 0) await batch.commit();
-  }
-
-  /// 2. Aumenta o Custo (e consequentemente a Venda) por um percentual
-  /// Pode filtrar por categoria ou aplicar em todos (category = null)
-  Future<void> batchIncreaseCostPrices({
-    required double increasePercent, 
-    required double currentMargin,
-    String? categoryFilter
-  }) async {
-    Query query = _componentsCollection;
-    
-    // Aplica filtro se houver
-    if (categoryFilter != null && categoryFilter != 'todos') {
-      query = query.where('category', isEqualTo: categoryFilter);
-    }
-
-    final snapshot = await query.get();
-    
-    WriteBatch batch = _firestore.batch();
-    int count = 0;
-
-    for (var doc in snapshot.docs) {
-      final data = doc.data() as Map<String, dynamic>;
-      double currentCost = (data['costPrice'] ?? 0.0).toDouble();
-
-      if (currentCost > 0) {
-        // 1. Calcula novo Custo
-        double newCost = currentCost * (1 + (increasePercent / 100));
-        newCost = double.parse(newCost.toStringAsFixed(2));
-
-        // 2. Calcula nova Venda (para manter a margem correta sobre o novo custo)
-        double newSellingPrice = newCost * (1 + (currentMargin / 100));
-        newSellingPrice = double.parse(newSellingPrice.toStringAsFixed(2));
-
-        batch.update(doc.reference, {
-          'costPrice': newCost,
-          'price': newSellingPrice
-        });
+      // Só atualiza se tiver preço de fornecedor base
+      if (currentSupplierPrice > 0) {
         
+        // 1. Novo Preço Fornecedor (Aplica o reajuste sobre o valor atual)
+        double newSupplierPrice = currentSupplierPrice * (1 + (increasePercent / 100));
+        newSupplierPrice = double.parse(newSupplierPrice.toStringAsFixed(2));
+
+        // 2. Novo Preço de Custo (Aplica o desconto global sobre o novo preço do fornecedor)
+        // Fórmula: Fornecedor * (1 - Desconto%)
+        double newCostPrice = newSupplierPrice * (1 - (supplierDiscount / 100));
+        newCostPrice = double.parse(newCostPrice.toStringAsFixed(2));
+
+        // 3. Novo Preço de Venda (Aplica a margem global sobre o novo custo)
+        // Fórmula: Custo * (1 + Margem%)
+        double newSellingPrice = newCostPrice * (1 + (currentMargin / 100));
+        newSellingPrice = double.parse(newSellingPrice.toStringAsFixed(2));
+
+        // Adiciona ao lote de atualização
+        batch.update(_componentsCollection.doc(comp.id), {
+          'supplierPrice': newSupplierPrice,
+          'costPrice': newCostPrice,
+          'price': newSellingPrice
+        });
+
         count++;
+        
+        // Commit parcial para evitar estouro de limite (500)
         if (count % 400 == 0) {
           await batch.commit();
           batch = _firestore.batch();
@@ -189,6 +153,7 @@ class ComponentService {
       }
     }
 
+    // Commit final dos itens restantes
     if (count > 0) await batch.commit();
   }
 }
