@@ -13,8 +13,6 @@ class AdminQuotesScreen extends StatefulWidget {
 class _AdminQuotesScreenState extends State<AdminQuotesScreen> with SingleTickerProviderStateMixin {
   final QuoteService _quoteService = QuoteService();
   late Stream<List<Quote>> _allQuotesStream;
-  
-  // Controlador das Abas
   late TabController _tabController;
 
   @override
@@ -32,59 +30,65 @@ class _AdminQuotesScreenState extends State<AdminQuotesScreen> with SingleTicker
 
   @override
   Widget build(BuildContext context) {
+    // CORREÇÃO: Removemos o Scaffold com AppBar. 
+    // Usamos um Scaffold sem AppBar para o fundo, e construímos a TabBar manualmente.
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Gerenciar Orçamentos'),
-        // Configuração das Abas
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: Colors.blueGrey[800],
-          labelColor: Colors.blueGrey[800],
-          unselectedLabelColor: Colors.grey,
-          tabs: const [
-            Tab(text: 'ENCAMINHADOS', icon: Icon(Icons.inbox)),
-            Tab(text: 'RASCUNHOS', icon: Icon(Icons.edit_note)),
-          ],
-        ),
-      ),
-      body: StreamBuilder<List<Quote>>(
-        stream: _allQuotesStream,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Center(child: Text('Erro: ${snapshot.error}'));
-          }
-          if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return const Center(child: Text('Nenhum orçamento encontrado.'));
-          }
-
-          List<Quote> allQuotes = snapshot.data!;
+      backgroundColor: Colors.transparent,
+      body: Column(
+        children: [
+          // --- TAB BAR MANUAL (Antes ficava no AppBar) ---
+          Container(
+            color: Colors.white,
+            child: TabBar(
+              controller: _tabController,
+              indicatorColor: Colors.blueGrey[800],
+              labelColor: Colors.blueGrey[800],
+              unselectedLabelColor: Colors.grey,
+              tabs: const [
+                Tab(text: 'ENCAMINHADOS', icon: Icon(Icons.inbox)),
+                Tab(text: 'RASCUNHOS', icon: Icon(Icons.edit_note)),
+              ],
+            ),
+          ),
           
-          // Ordena por data (mais novos primeiro)
-          allQuotes.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          // --- CONTEÚDO ---
+          Expanded(
+            child: StreamBuilder<List<Quote>>(
+              stream: _allQuotesStream,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snapshot.hasError) {
+                  return Center(child: Text('Erro: ${snapshot.error}'));
+                }
+                if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                  return const Center(child: Text('Nenhum orçamento encontrado.'));
+                }
 
-          // Separa as listas
-          final receivedQuotes = allQuotes.where((q) => q.status != 'rascunho').toList();
-          final draftQuotes = allQuotes.where((q) => q.status == 'rascunho').toList();
+                List<Quote> allQuotes = snapshot.data!;
+                
+                // Ordena por data (mais novos primeiro)
+                allQuotes.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
-          return TabBarView(
-            controller: _tabController,
-            children: [
-              // ABA 1: Recebidos
-              _buildQuoteList(receivedQuotes, isDraft: false),
-              
-              // ABA 2: Rascunhos
-              _buildQuoteList(draftQuotes, isDraft: true),
-            ],
-          );
-        },
+                final receivedQuotes = allQuotes.where((q) => q.status != 'rascunho').toList();
+                final draftQuotes = allQuotes.where((q) => q.status == 'rascunho').toList();
+
+                return TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _buildQuoteList(receivedQuotes, isDraft: false),
+                    _buildQuoteList(draftQuotes, isDraft: true),
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  // Construtor da Lista Reutilizável
   Widget _buildQuoteList(List<Quote> quotes, {required bool isDraft}) {
     if (quotes.isEmpty) {
       return Center(

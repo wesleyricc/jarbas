@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/rod_builder_provider.dart';
+import '../../models/kit_model.dart'; 
+import '../../models/component_model.dart';
+import '../../services/kit_service.dart'; 
 import '../../services/auth_service.dart';
 import '../../services/user_service.dart';
 import '../../services/whatsapp_service.dart';
 import '../widgets/client_info_step.dart';
 import '../widgets/component_selector.dart';
-import '../widgets/passadores_step.dart'; 
-import '../widgets/acessorios_step.dart';
+import '../widgets/multi_component_step.dart';
 import '../widgets/customization_step.dart';
 import '../widgets/price_summary_bar.dart';
 import '../widgets/summary_step.dart';
@@ -20,20 +22,19 @@ class RodBuilderScreen extends StatefulWidget {
 }
 
 class _RodBuilderScreenState extends State<RodBuilderScreen> {
+  // Passos: 0:Client, 1:Modo, 2:Blank, 3:Cabo, 4:Reel, 5:Passadores, 6:Acessórios, 7:Custom, 8:Resumo
   int _currentStep = 0;
   bool _isLoading = false;
-  
-  // Passos: 0:Client, 1:Blank, 2:Cabo, 3:Reel, 4:Passadores, 5:Acessórios, 6:Custom, 7:Resumo
-  final int _totalSteps = 8; 
+  final int _totalSteps = 9; 
 
   final AuthService _authService = AuthService();
   final UserService _userService = UserService();
+  final KitService _kitService = KitService();
   late Future<bool> _isAdminFuture;
 
   @override
   void initState() {
     super.initState();
-    // Inicializa: Limpa e Carrega Config
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final provider = context.read<RodBuilderProvider>();
       provider.clearBuild();
@@ -48,7 +49,7 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
     return await _userService.isAdmin(user);
   }
 
-  // --- AÇÕES ---
+  // --- AÇÕES DO BUILDER ---
 
   Future<void> _saveQuoteAsDraft(RodBuilderProvider provider) async {
     final user = _authService.currentUser;
@@ -61,7 +62,6 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
     }
 
     setState(() => _isLoading = true);
-    
     bool success = await provider.saveQuote(user.uid, status: 'rascunho');
     
     if (mounted) {
@@ -86,7 +86,6 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
     }
 
     setState(() => _isLoading = true);
-    
     bool success = await provider.saveQuote(user.uid, status: 'pendente');
 
     if (mounted) {
@@ -102,6 +101,21 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
         _showError('Erro ao salvar orçamento.');
       }
       setState(() => _isLoading = false);
+    }
+  }
+
+  // --- CARREGAMENTO DO KIT ---
+
+  Future<void> _selectKitAndProceed(KitModel kit, RodBuilderProvider provider) async {
+    setState(() => _isLoading = true);
+    final success = await provider.loadKit(kit);
+    setState(() => _isLoading = false);
+    
+    if (success) {
+      // Pula para o Blank (Passo 2) já preenchido
+      setState(() => _currentStep = 2); 
+    } else {
+      _showError('Erro ao carregar kit.');
     }
   }
 
@@ -201,6 +215,8 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
 
   Widget _buildBottomNavigation(bool isAdmin, RodBuilderProvider provider) {
     bool isLastStep = _currentStep == _totalSteps - 1;
+    bool isModeSelection = _currentStep == 1;
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(color: Colors.white, boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 10, offset: const Offset(0, -5))]),
@@ -208,15 +224,18 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
         children: [
           if (_currentStep > 0)
             Expanded(child: OutlinedButton(onPressed: _isLoading ? null : _prevStep, style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16), side: BorderSide(color: Colors.grey[400]!)), child: const Text('Voltar', style: TextStyle(color: Colors.black87)))),
+          
           if (_currentStep > 0) const SizedBox(width: 16),
-          Expanded(
-            flex: 2,
-            child: ElevatedButton(
-              onPressed: _isLoading ? null : (isLastStep ? () => isAdmin ? _saveQuoteAsDraft(provider) : _submitClientQuote(provider) : _nextStep),
-              style: ElevatedButton.styleFrom(backgroundColor: isLastStep ? (isAdmin ? Colors.blue[700] : const Color(0xFF25D366)) : Colors.blueGrey[800], foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 16), elevation: 0),
-              child: _isLoading ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : Text(isLastStep ? (isAdmin ? 'Salvar Rascunho' : 'Solicitar via WhatsApp') : 'Próximo Passo', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          
+          if (!isModeSelection)
+            Expanded(
+              flex: 2,
+              child: ElevatedButton(
+                onPressed: _isLoading ? null : (isLastStep ? () => isAdmin ? _saveQuoteAsDraft(provider) : _submitClientQuote(provider) : _nextStep),
+                style: ElevatedButton.styleFrom(backgroundColor: isLastStep ? (isAdmin ? Colors.blue[700] : const Color(0xFF25D366)) : Colors.blueGrey[800], foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 16), elevation: 0),
+                child: _isLoading ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : Text(isLastStep ? (isAdmin ? 'Salvar Rascunho' : 'Solicitar via WhatsApp') : 'Próximo Passo', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -226,68 +245,394 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
 
   Widget _getStepWidget(int step, bool isAdmin, RodBuilderProvider provider) {
     switch (step) {
-      case 0:
-        return const ClientInfoStep();
+      case 0: return const ClientInfoStep();
+      case 1: return _buildModeSelectionStep(provider); // Passo Novo
+      
+      case 2: return ComponentSelector(
+          category: 'blank', selectedComponent: provider.selectedBlank, selectedVariation: provider.selectedBlankVariation,
+          isAdmin: isAdmin, onSelect: (c, v) => provider.selectBlank(c, variation: v));
         
-      case 1: // BLANK
-        return ComponentSelector(
-          category: 'blank',
-          selectedComponent: provider.selectedBlank,
-          selectedVariation: provider.selectedBlankVariation,
-          isAdmin: isAdmin,
-          // --- CORREÇÃO: Aceita (c, v) ---
-          onSelect: (component, variation) => provider.selectBlank(component, variation: variation),
-        );
-        
-      case 2: // CABO
-        return ComponentSelector(
-          category: 'cabo',
-          selectedComponent: provider.selectedCabo,
-          selectedVariation: provider.selectedCaboVariation,
-          isAdmin: isAdmin,
-          quantity: provider.caboQuantity,
-          onQuantityChanged: (val) => provider.setCaboQuantity(val),
-          // --- CORREÇÃO: Aceita (c, v) ---
-          onSelect: (component, variation) => provider.selectCabo(component, variation: variation),
-        );
-        
-      case 3: // REEL SEAT
-        return ComponentSelector(
-          category: 'reel_seat',
-          selectedComponent: provider.selectedReelSeat,
-          selectedVariation: provider.selectedReelSeatVariation,
-          isAdmin: isAdmin,
-          // --- CORREÇÃO: Aceita (c, v) ---
-          onSelect: (component, variation) => provider.selectReelSeat(component, variation: variation),
-        );
-        
-      case 4: // PASSADORES (Lista)
-        return PassadoresStep(isAdmin: isAdmin);
-        
-      case 5:
-      return AcessoriosStep(isAdmin: isAdmin);
-        
-      case 6:
-      return CustomizationStep(isAdmin: isAdmin);
+      case 3: return ComponentSelector(
+          category: 'cabo', selectedComponent: provider.selectedCabo, selectedVariation: provider.selectedCaboVariation,
+          isAdmin: isAdmin, quantity: provider.caboQuantity, onQuantityChanged: (val) => provider.setCaboQuantity(val),
+          onSelect: (c, v) => provider.selectCabo(c, variation: v));
+      
+      case 4: return ComponentSelector(
+          category: 'reel_seat', selectedComponent: provider.selectedReelSeat, selectedVariation: provider.selectedReelSeatVariation,
+          isAdmin: isAdmin, onSelect: (c, v) => provider.selectReelSeat(c, variation: v));
+         
+      case 5: return MultiComponentStep(
+          isAdmin: isAdmin, categoryKey: 'passadores', title: 'Passador', emptyMessage: 'Nenhum passador selecionado.', emptyIcon: Icons.playlist_add,
+          items: provider.selectedPassadoresList, onAdd: (c, v) => provider.addPassador(c, 1, variation: v),
+          onRemove: (i) => provider.removePassador(i), onUpdateQty: (i, q) => provider.updatePassadorQty(i, q));
 
-      case 7:
-        return SummaryStep(isAdmin: isAdmin);
-        
-      default:
-        return const SizedBox.shrink();
+      case 6: return MultiComponentStep(
+          isAdmin: isAdmin, categoryKey: 'acessorios', title: 'Acessório', emptyMessage: 'Nenhum acessório selecionado.', emptyIcon: Icons.extension_outlined,
+          items: provider.selectedAcessoriosList, onAdd: (c, v) => provider.addAcessorio(c, 1, variation: v),
+          onRemove: (i) => provider.removeAcessorio(i), onUpdateQty: (i, q) => provider.updateAcessorioQty(i, q));
+
+      case 7: return CustomizationStep(isAdmin: isAdmin);
+      case 8: return SummaryStep(isAdmin: isAdmin);
+      default: return const SizedBox.shrink();
     }
+  }
+
+  // --- PASSO 1: SELEÇÃO DE MODO E DETALHES DO KIT ---
+
+  Widget _buildModeSelectionStep(RodBuilderProvider provider) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Card Montar do Zero
+        _buildModeCard(
+          title: 'Montar do Zero',
+          description: 'Escolha peça por peça e crie algo totalmente único.',
+          icon: Icons.build,
+          color: Colors.blueGrey,
+          onTap: () {
+            provider.clearBuild();
+            _nextStep();
+          },
+        ),
+        const SizedBox(height: 24),
+        const Row(children: [Expanded(child: Divider()), Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Text("OU")), Expanded(child: Divider())]),
+        const SizedBox(height: 24),
+        
+        Text(
+          "Escolha um Kit Pronto:", 
+          style: TextStyle(
+            fontSize: 18, 
+            fontWeight: FontWeight.bold, 
+            color: Colors.blueGrey[800] 
+          )
+        ),
+        const SizedBox(height: 16),
+        
+        // Carrossel de Kits
+        SizedBox(
+          height: 280, // Altura do carrossel
+          child: StreamBuilder<List<KitModel>>(
+            stream: _kitService.getKitsStream(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
+              if (!snapshot.hasData || snapshot.data!.isEmpty) return const Center(child: Text("Nenhum kit disponível."));
+              
+              return ListView.builder(
+                scrollDirection: Axis.horizontal,
+                itemCount: snapshot.data!.length,
+                itemBuilder: (context, index) {
+                  final kit = snapshot.data![index];
+                  return _buildKitCard(kit, provider);
+                },
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildModeCard({required String title, required String description, required IconData icon, required Color color, required VoidCallback onTap}) {
+    return Card(
+      elevation: 2,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Row(
+            children: [
+              CircleAvatar(backgroundColor: color.withOpacity(0.1), radius: 30, child: Icon(icon, color: color, size: 30)),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(title, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: color)),
+                  const SizedBox(height: 4),
+                  Text(description, style: TextStyle(color: Colors.grey[600], fontSize: 13)),
+                ]),
+              ),
+              const Icon(Icons.chevron_right, color: Colors.grey),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildKitCard(KitModel kit, RodBuilderProvider provider) {
+    return Container(
+      width: 220,
+      margin: const EdgeInsets.only(right: 16, bottom: 8),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 4)]),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () => _showKitDetails(context, kit, provider),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Imagem Capa
+              Expanded(
+                flex: 3,
+                child: ClipRRect(
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                  child: kit.imageUrls.isNotEmpty
+                      ? Image.network(kit.imageUrls.first, fit: BoxFit.cover)
+                      : Container(color: Colors.grey[200], child: const Icon(Icons.image_not_supported)),
+                ),
+              ),
+              // Info Resumida
+              Expanded(
+                flex: 2,
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(kit.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16), maxLines: 1, overflow: TextOverflow.ellipsis),
+                      const SizedBox(height: 4),
+                      Text(kit.description, style: TextStyle(color: Colors.grey[600], fontSize: 12), maxLines: 2, overflow: TextOverflow.ellipsis),
+                      const Spacer(),
+                      // Botão visual "Ver Detalhes"
+                      Container(
+                        alignment: Alignment.center,
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        decoration: BoxDecoration(color: Colors.blueGrey[50], borderRadius: BorderRadius.circular(8)),
+                        child: Text("VER DETALHES", style: TextStyle(color: Colors.blueGrey[800], fontWeight: FontWeight.bold, fontSize: 12)),
+                      )
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // --- LÓGICA DE DETALHES DO KIT (MODAL) ---
+
+  Future<Map<String, dynamic>> _fetchKitComponentsData(KitModel kit) async {
+    final blank = await _kitService.getComponentById(kit.blankId);
+    final cabo = await _kitService.getComponentById(kit.caboId);
+    final reel = await _kitService.getComponentById(kit.reelSeatId);
+    
+    List<String> passadoresNames = [];
+    for (var item in kit.passadoresIds) {
+      final c = await _kitService.getComponentById(item['id']);
+      if (c != null) passadoresNames.add("${c.name} (${item['quantity']}x)");
+    }
+
+    List<String> acessoriosNames = [];
+    for (var item in kit.acessoriosIds) {
+      final c = await _kitService.getComponentById(item['id']);
+      if (c != null) acessoriosNames.add("${c.name} (${item['quantity']}x)");
+    }
+
+    return {
+      'blank': blank?.name ?? 'Não encontrado',
+      'cabo': cabo?.name ?? 'Não encontrado',
+      'reel': reel?.name ?? 'Não encontrado',
+      'passadores': passadoresNames,
+      'acessorios': acessoriosNames,
+    };
+  }
+
+  void _showKitDetails(BuildContext context, KitModel kit, RodBuilderProvider provider) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.85,
+        minChildSize: 0.6,
+        maxChildSize: 0.95,
+        builder: (context, scrollController) {
+          return Container(
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: Column(
+              children: [
+                // Indicador de arraste
+                const SizedBox(height: 16),
+                Container(width: 40, height: 5, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10))),
+                const SizedBox(height: 16),
+
+                // Conteúdo Rolável
+                Expanded(
+                  child: ListView(
+                    controller: scrollController,
+                    padding: EdgeInsets.zero,
+                    children: [
+                      // 1. Galeria de Fotos
+                      if (kit.imageUrls.isNotEmpty)
+                        SizedBox(
+                          height: 250,
+                          child: PageView.builder(
+                            itemCount: kit.imageUrls.length,
+                            itemBuilder: (ctx, index) {
+                              return Image.network(kit.imageUrls[index], fit: BoxFit.cover);
+                            },
+                          ),
+                        )
+                      else
+                        Container(height: 200, color: Colors.grey[200], child: const Icon(Icons.image_not_supported, size: 50, color: Colors.grey)),
+
+                      Padding(
+                        padding: const EdgeInsets.all(24.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // 2. Título e Descrição
+                            Text(kit.name, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.black87)),
+                            const SizedBox(height: 8),
+                            Text(kit.description, style: const TextStyle(fontSize: 16, color: Colors.black87, height: 1.4)),
+                            
+                            const Divider(height: 40),
+                            Text("Especificações Técnicas", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blueGrey[900])),
+                            const SizedBox(height: 16),
+
+                            // 3. Lista de Componentes (Async)
+                            FutureBuilder<Map<String, dynamic>>(
+                              future: _fetchKitComponentsData(kit),
+                              builder: (context, snapshot) {
+                                if (snapshot.connectionState == ConnectionState.waiting) {
+                                  return const Padding(padding: EdgeInsets.all(20), child: Center(child: CircularProgressIndicator()));
+                                }
+                                if (snapshot.hasError) return const Text("Erro ao carregar detalhes.");
+                                
+                                final data = snapshot.data!;
+                                
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _buildDetailRow(Icons.crop_square, "Blank", data['blank'], kit.blankVariation),
+                                    _buildDetailRow(Icons.grid_goldenratio, "Cabo", data['cabo'], kit.caboVariation),
+                                    _buildDetailRow(Icons.chair, "Reel Seat", data['reel'], kit.reelSeatVariation),
+                                    
+                                    // AQUI: Usando o novo helper para Passadores
+                                    _buildDetailList(
+                                      Icons.format_list_bulleted, 
+                                      "Passadores", 
+                                      List<String>.from(data['passadores']),
+                                    ),
+
+                                    // AQUI: Usando o novo helper para Acessórios
+                                    _buildDetailList(
+                                      Icons.extension, 
+                                      "Acessórios", 
+                                      List<String>.from(data['acessorios']),
+                                    ),
+                                  ],
+                                );
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // 4. Botão de Ação
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(color: Colors.white, boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, -5))]),
+                  child: SafeArea(
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.orange[800],
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                        ),
+                        onPressed: () {
+                          Navigator.pop(context);
+                          _selectKitAndProceed(kit, provider);
+                        },
+                        child: const Text("SELECIONAR ESTE KIT", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                  ),
+                )
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  // --- HELPERS VISUAIS ---
+
+  // Helper para Item Único (Blank, Cabo, Reel)
+  Widget _buildDetailRow(IconData icon, String label, String value, String? variation) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 20, color: Colors.blueGrey[800]),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.blueGrey[700])),
+                Text("$value${variation != null ? ' ($variation)' : ''}", style: const TextStyle(fontSize: 15, color: Colors.black87)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // (NOVO) Helper para Listas (Passadores, Acessórios)
+  Widget _buildDetailList(IconData icon, String label, List<String> items) {
+    if (items.isEmpty) return const SizedBox.shrink();
+    
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 20, color: Colors.blueGrey[800]),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.blueGrey[700])),
+                const SizedBox(height: 2),
+                ...items.map((item) => Padding(
+                  padding: const EdgeInsets.only(bottom: 2.0),
+                  child: Text("• $item", style: const TextStyle(fontSize: 15, color: Colors.black87)),
+                )),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   String _getStepTitle(int step) {
     switch (step) {
       case 0: return 'Vamos começar!';
-      case 1: return 'Escolha o Blank';
-      case 2: return 'Escolha o Cabo';
-      case 3: return 'Escolha o Reel Seat';
-      case 4: return 'Escolha os Passadores';
-      case 5: return 'Acessórios'; // Novo Título
-      case 6: return 'Personalize';
-      case 7: return 'Resumo Final';
+      case 1: return 'Como deseja montar?';
+      case 2: return 'Escolha o Blank';
+      case 3: return 'Escolha o Cabo';
+      case 4: return 'Escolha o Reel Seat';
+      case 5: return 'Escolha os Passadores';
+      case 6: return 'Acessórios';
+      case 7: return 'Personalize';
+      case 8: return 'Resumo Final';
       default: return '';
     }
   }
@@ -295,13 +640,14 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
   String _getStepSubtitle(int step) {
     switch (step) {
       case 0: return 'Precisamos de alguns dados para entrar em contato.';
-      case 1: return 'O corpo da vara. Selecione a base ideal.';
-      case 2: return 'O conforto da pegada. Defina o material e a quantidade.';
-      case 3: return 'Onde sua carretilha ou molinete será fixado.';
-      case 4: return 'Adicione quantos passadores forem necessários.';
-      case 5: return 'Escolha itens extras para sua vara.'; // Novo Subtítulo
-      case 6: return 'Dê o seu toque final com a gravação.';
-      case 7: return 'Confira tudo antes de enviar.';
+      case 1: return 'Você pode começar do zero ou usar um modelo pronto.';
+      case 2: return 'O corpo da vara. Selecione a base ideal.';
+      case 3: return 'O conforto da pegada. Defina o material e a quantidade.';
+      case 4: return 'Onde sua carretilha ou molinete será fixado.';
+      case 5: return 'Adicione quantos passadores forem necessários.';
+      case 6: return 'Escolha itens extras para sua vara.';
+      case 7: return 'Dê o seu toque final com a gravação.';
+      case 8: return 'Confira tudo antes de enviar.';
       default: return '';
     }
   }

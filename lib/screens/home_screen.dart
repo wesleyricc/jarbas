@@ -3,12 +3,13 @@ import 'package:firebase_auth/firebase_auth.dart'; // Para o User
 import '../services/auth_service.dart';
 import '../services/user_service.dart'; // Para verificar o admin
 import '../services/whatsapp_service.dart';
+import 'admin_kits_screen.dart';
 import 'catalog_screen.dart'; // Para o Catálogo
 import 'rod_builder_screen.dart'; // Para o Montador
 import 'quote_history_screen.dart'; // Para o Histórico (Admin)
 import 'admin_quotes_screen.dart'; // Para o Gerenciar Orçamentos (Admin)
 import 'admin_components_screen.dart';
-
+import 'admin_home_screen.dart';
 import 'admin_users_screen.dart'; // Para o Gerenciar Usuários (Admin)
 
 class HomeScreen extends StatefulWidget {
@@ -204,6 +205,29 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       const SizedBox(height: 16),
 
+      /*
+      // --- NOVO BOTÃO: Meus Pedidos ---
+      ElevatedButton.icon(
+        icon: const Icon(Icons.history, color: Colors.blueGrey),
+        label: const Text('Rascunhos'),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.white,
+          foregroundColor: Colors.blueGrey[800],
+          side: BorderSide(color: Colors.blueGrey[200]!),
+          padding: const EdgeInsets.symmetric(vertical: 20),
+        ),
+        onPressed: () {
+          Navigator.push(
+            context,
+            // A tela QuoteHistoryScreen já filtra pelo ID do usuário logado
+            // então funciona perfeitamente para o cliente também.
+            MaterialPageRoute(builder: (context) => const QuoteHistoryScreen()),
+          );
+        },
+      ),
+      const SizedBox(height: 16),
+      */
+      
       // Botão para o Catálogo
       ElevatedButton.icon(
         icon: const Icon(Icons.view_list_outlined),
@@ -345,15 +369,38 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // Botões do Menu Admin
+  // Botões do Menu Admin
   List<Widget> _buildAdminMenu(BuildContext context) {
     return [
-      // 1. Customizar (Rascunho)
+      // 1. ACESSO AO PAINEL COMPLETO (Dashboard + Catálogo + Orçamentos)
       ElevatedButton.icon(
-        icon: const Icon(Icons.add_circle_outline, color: Colors.white),
-        label: const Text('Customizar'),
+        icon: const Icon(Icons.dashboard, color: Colors.white),
+        label: const Text('Painel Administrativo'),
         style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.blueGrey[600],
+          backgroundColor: Colors.blueGrey[800],
           foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 20),
+          textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
+        onPressed: () {
+          // Navega para a tela que tem o BottomNavigationBar (Dashboard, Componentes, Quotes)
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const AdminHomeScreen()),
+          );
+        },
+      ),
+      
+      const SizedBox(height: 16),
+
+      // 2. Customizar (Rascunho Rápido) - Mantivemos caso o admin queira fazer um orçamento rápido
+      ElevatedButton.icon(
+        icon: const Icon(Icons.add_circle_outline, color: Colors.blueGrey),
+        label: const Text('Novo Orçamento (Rascunho)'),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.white,
+          foregroundColor: Colors.blueGrey[800],
+          side: BorderSide(color: Colors.blueGrey[200]!),
           padding: const EdgeInsets.symmetric(vertical: 20),
         ),
         onPressed: () {
@@ -363,48 +410,10 @@ class _HomeScreenState extends State<HomeScreen> {
           );
         },
       ),
-      const SizedBox(height: 16),
-      
-      // 2. Gerenciar Orçamentos (Agora inclui tudo)
-      ElevatedButton.icon(
-        icon: const Icon(Icons.receipt_long_outlined),
-        label: const Text('Gerenciar Orçamentos'),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFFFFFFFF),
-          foregroundColor: Colors.blueGrey[800],
-          side: BorderSide(color: Colors.grey[400]!),
-          padding: const EdgeInsets.symmetric(vertical: 20),
-        ),
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const AdminQuotesScreen()),
-          );
-        },
-      ),
+
       const SizedBox(height: 16),
 
-      // 4. Gerenciar Catálogo (Com a Engrenagem dentro)
-      ElevatedButton.icon(
-        icon: const Icon(Icons.inventory_2_outlined),
-        label: const Text('Gerenciar Catálogo'),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.blueGrey[800],
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(vertical: 20),
-        ),
-        onPressed: () {
-          // Navega direto para a tela de componentes
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const AdminComponentsScreen()),
-          );
-        },
-      ),
-      
-      // Mantive o botão de Usuários pois é vital para o sistema, 
-      // mas se quiser remover, basta apagar o bloco abaixo.
-      const SizedBox(height: 16),
+      // 3. Gerenciar Usuários
       ElevatedButton.icon(
         icon: const Icon(Icons.manage_accounts_outlined, color: Colors.white),
         label: const Text('Gerenciar Usuários'),

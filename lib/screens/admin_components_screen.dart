@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../models/component_model.dart';
 import '../../../services/component_service.dart';
 import 'component_form_screen.dart';
-import 'admin_settings_screen.dart';
+// Removido: import 'admin_settings_screen.dart'; // Não é mais necessário aqui, pois está na Home
 
 class AdminComponentsScreen extends StatefulWidget {
   const AdminComponentsScreen({super.key});
@@ -16,15 +16,14 @@ class _AdminComponentsScreenState extends State<AdminComponentsScreen> {
   final TextEditingController _searchController = TextEditingController();
   
   String _searchQuery = '';
-  String? _selectedCategoryKey; // Categoria selecionada (null = Todos)
+  String? _selectedCategoryKey; 
 
-  // Mapa de categorias
   final Map<String, String> _categoriesMap = {
     'blank': 'Blank',
     'cabo': 'Cabo',
     'reel_seat': 'Reel Seat',
     'passadores': 'Passadores',
-    'acessorios': 'Acessórios', // NOVA CATEGORIA
+    'acessorios': 'Acessórios', 
   };
 
   @override
@@ -45,24 +44,10 @@ class _AdminComponentsScreenState extends State<AdminComponentsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // CORREÇÃO: Removemos o AppBar daqui. Quem manda é o AdminHomeScreen.
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Gerenciar Catálogo'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.settings),
-            tooltip: 'Configurar Margem de Lucro',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const AdminSettingsScreen(),
-                ),
-              );
-            },
-          ),
-        ],
-      ),
+      // Mantemos o Scaffold apenas para o FloatingActionButton funcionar corretamente
+      backgroundColor: Colors.transparent, // Fundo transparente para mesclar com a Home
       body: Column(
         children: [
           // 1. BARRA DE BUSCA
@@ -86,11 +71,13 @@ class _AdminComponentsScreenState extends State<AdminComponentsScreen> {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
+                filled: true,
+                fillColor: Colors.white,
               ),
             ),
           ),
 
-          // 2. FILTRO DE CATEGORIAS (Horizontal)
+          // 2. FILTRO DE CATEGORIAS
           _buildCategoryFilter(),
           
           const Divider(height: 1),
@@ -98,7 +85,6 @@ class _AdminComponentsScreenState extends State<AdminComponentsScreen> {
           // 3. LISTA DE ITENS
           Expanded(
             child: StreamBuilder<List<Component>>(
-              // Buscamos TUDO para poder filtrar localmente (busca + categoria)
               stream: _componentService.getComponentsStream(),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
@@ -113,14 +99,9 @@ class _AdminComponentsScreenState extends State<AdminComponentsScreen> {
 
                 List<Component> allComponents = snapshot.data!;
 
-                // --- LÓGICA DE FILTRAGEM ---
                 final filteredComponents = allComponents.where((component) {
-                  // 1. Filtro de Texto
                   final matchesSearch = component.name.toLowerCase().contains(_searchQuery.toLowerCase());
-                  
-                  // 2. Filtro de Categoria (se houver uma selecionada)
                   final matchesCategory = _selectedCategoryKey == null || component.category == _selectedCategoryKey;
-
                   return matchesSearch && matchesCategory;
                 }).toList();
 
@@ -135,7 +116,6 @@ class _AdminComponentsScreenState extends State<AdminComponentsScreen> {
                   );
                 }
 
-                // Ordena por nome
                 filteredComponents.sort((a, b) => a.name.compareTo(b.name));
 
                 return ListView.builder(
@@ -166,7 +146,6 @@ class _AdminComponentsScreenState extends State<AdminComponentsScreen> {
     );
   }
 
-  // Widget da Barra de Categorias
   Widget _buildCategoryFilter() {
     return SizedBox(
       height: 60,
@@ -174,10 +153,7 @@ class _AdminComponentsScreenState extends State<AdminComponentsScreen> {
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         children: [
-          // Botão "Todos"
           _buildCategoryChip(label: 'Todos', key: null),
-          
-          // Botões das Categorias
           ..._categoriesMap.entries.map((entry) {
             return _buildCategoryChip(label: entry.value, key: entry.key);
           }),
@@ -186,7 +162,6 @@ class _AdminComponentsScreenState extends State<AdminComponentsScreen> {
     );
   }
 
-  // Chip Individual
   Widget _buildCategoryChip({required String label, required String? key}) {
     final isSelected = _selectedCategoryKey == key;
     return Padding(
@@ -206,14 +181,13 @@ class _AdminComponentsScreenState extends State<AdminComponentsScreen> {
         ),
         onSelected: (selected) {
           setState(() {
-            _selectedCategoryKey = key; // Se clicar, seleciona (ou mantém null para todos)
+            _selectedCategoryKey = key; 
           });
         },
       ),
     );
   }
 
-  // Card do Item (Versão Admin - Com Custo e Estoque)
   Widget _buildAdminComponentCard(Component component) {
     return Card(
       elevation: 2,
@@ -231,7 +205,6 @@ class _AdminComponentsScreenState extends State<AdminComponentsScreen> {
           padding: const EdgeInsets.all(12.0),
           child: Row(
             children: [
-              // Imagem
               Container(
                 width: 70,
                 height: 70,
@@ -251,10 +224,7 @@ class _AdminComponentsScreenState extends State<AdminComponentsScreen> {
                       : const Icon(Icons.image_not_supported, color: Colors.grey),
                 ),
               ),
-              
               const SizedBox(width: 16),
-
-              // Informações
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -266,7 +236,6 @@ class _AdminComponentsScreenState extends State<AdminComponentsScreen> {
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 4),
-                    // Dados Técnicos (Estoque e Custo)
                     Row(
                       children: [
                         _buildTag(Icons.inventory_2, '${component.stock} un', 
@@ -283,8 +252,6 @@ class _AdminComponentsScreenState extends State<AdminComponentsScreen> {
                   ],
                 ),
               ),
-
-              // Preço de Venda e Ícone Edit
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
@@ -307,7 +274,6 @@ class _AdminComponentsScreenState extends State<AdminComponentsScreen> {
     );
   }
 
-  // Widgetzinho para o Estoque
   Widget _buildTag(IconData icon, String label, Color bg, Color text) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),

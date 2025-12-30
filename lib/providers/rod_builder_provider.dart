@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/component_model.dart';
+import '../models/kit_model.dart';
 import '../models/quote_model.dart';
 import '../services/quote_service.dart';
 import '../services/config_service.dart';
@@ -72,6 +73,65 @@ class RodBuilderProvider with ChangeNotifier {
   String get clientPhone => _clientPhone;
   String get clientCity => _clientCity;
   String get clientState => _clientState;
+
+  Future<bool> loadKit(KitModel kit) async {
+    try {
+      // Importe o KitService e ComponentService se necessário, 
+      // ou instancie aqui dentro
+      final FirebaseFirestore firestore = FirebaseFirestore.instance;
+      
+      // Helper para buscar componente
+      Future<Component?> fetchComp(String id) async {
+        if (id.isEmpty) return null;
+        final doc = await firestore.collection('components').doc(id).get();
+        if (doc.exists) return Component.fromFirestore(doc);
+        return null;
+      }
+
+      // 1. Carrega Componentes Principais
+      _selectedBlank = await fetchComp(kit.blankId);
+      _selectedBlankVariation = kit.blankVariation;
+      
+      _selectedCabo = await fetchComp(kit.caboId);
+      _selectedCaboVariation = kit.caboVariation;
+      _caboQuantity = kit.caboQuantity;
+      
+      _selectedReelSeat = await fetchComp(kit.reelSeatId);
+      _selectedReelSeatVariation = kit.reelSeatVariation;
+
+      // 2. Carrega Listas (Passadores e Acessórios)
+      _selectedPassadoresList.clear();
+      for (var itemMap in kit.passadoresIds) {
+        final comp = await fetchComp(itemMap['id']);
+        if (comp != null) {
+          _selectedPassadoresList.add(RodItem(
+            component: comp,
+            quantity: (itemMap['quantity'] ?? 1).toInt(),
+            variation: itemMap['variation'],
+          ));
+        }
+      }
+
+      _selectedAcessoriosList.clear();
+      for (var itemMap in kit.acessoriosIds) {
+        final comp = await fetchComp(itemMap['id']);
+        if (comp != null) {
+          _selectedAcessoriosList.add(RodItem(
+            component: comp,
+            quantity: (itemMap['quantity'] ?? 1).toInt(),
+            variation: itemMap['variation'],
+          ));
+        }
+      }
+
+      _calculateTotalPrice();
+      notifyListeners();
+      return true;
+    } catch (e) {
+      print("Erro ao carregar kit: $e");
+      return false;
+    }
+  }
 
   // --- CARREGAR CONFIGURAÇÕES ---
   Future<void> fetchSettings() async {

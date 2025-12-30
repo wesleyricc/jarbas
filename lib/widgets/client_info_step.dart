@@ -91,10 +91,15 @@ class _ClientInfoStepState extends State<ClientInfoStep> {
             controller: _phoneController,
             decoration: const InputDecoration(
               labelText: 'Telefone (com DDD)',
+              hintText: '(11) 99999-9999',
               border: OutlineInputBorder(),
               prefixIcon: Icon(Icons.phone),
             ),
             keyboardType: TextInputType.phone,
+            inputFormatters: [
+              FilteringTextInputFormatter.digitsOnly, // Aceita só números antes de formatar
+              PhoneInputFormatter(), // Aplica a máscara visual
+            ],
           ),
           const SizedBox(height: 16),
           
@@ -139,6 +144,28 @@ class _ClientInfoStepState extends State<ClientInfoStep> {
           ),
         ],
       ),
+    );
+  }
+}
+
+// Formatador simples para (XX) XXXXX-XXXX
+class PhoneInputFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
+    final text = newValue.text.replaceAll(RegExp(r'[^\d]'), '');
+    if (text.length > 11) return oldValue; // Limita tamanho
+
+    final buffer = StringBuffer();
+    for (int i = 0; i < text.length; i++) {
+      if (i == 0) buffer.write('(');
+      if (i == 2) buffer.write(') ');
+      if (i == 7) buffer.write('-');
+      buffer.write(text[i]);
+    }
+
+    return TextEditingValue(
+      text: buffer.toString(),
+      selection: TextSelection.collapsed(offset: buffer.length),
     );
   }
 }

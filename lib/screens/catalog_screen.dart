@@ -24,7 +24,8 @@ class _CatalogScreenState extends State<CatalogScreen> {
     'blank': 'Blank',
     'cabo': 'Cabo',
     'passadores': 'Passadores',
-    'reel_seat': 'Reel Seat'
+    'reel_seat': 'Reel Seat',
+    'acessorios': 'Acessórios', // ADICIONADO AQUI
   };
 
   // Futuro para guardar o status de admin
@@ -42,7 +43,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
     return await _userService.isAdmin(user);
   }
 
-  // --- (NOVO) Método para mostrar a imagem ampliada ---
+  // --- Método para mostrar a imagem ampliada ---
   void _showImageDialog(BuildContext context, String imageUrl) {
     showDialog(
       context: context,
@@ -61,7 +62,6 @@ class _CatalogScreenState extends State<CatalogScreen> {
                 child: Image.network(
                   imageUrl,
                   fit: BoxFit.contain, // Para ver a imagem inteira
-                  // Feedback de carregamento para a imagem grande
                   loadingBuilder: (context, child, loadingProgress) {
                     if (loadingProgress == null) return child;
                     return const Center(child: CircularProgressIndicator());
@@ -80,7 +80,6 @@ class _CatalogScreenState extends State<CatalogScreen> {
                 padding: const EdgeInsets.all(8.0),
                 child: IconButton(
                   icon: const Icon(Icons.close, color: Colors.white, size: 30),
-                  // Adiciona um fundo para o botão ser visível
                   style: IconButton.styleFrom(
                     backgroundColor: Colors.black.withOpacity(0.5)
                   ),
@@ -95,7 +94,6 @@ class _CatalogScreenState extends State<CatalogScreen> {
       },
     );
   }
-  // --- FIM DO NOVO MÉTODO ---
 
   @override
   Widget build(BuildContext context) {
@@ -186,6 +184,11 @@ class _CatalogScreenState extends State<CatalogScreen> {
             child: ChoiceChip(
               label: const Text('Todos'),
               selected: _selectedCategoryKey == null,
+              selectedColor: Colors.blueGrey[800], // Cor selecionada
+              labelStyle: TextStyle(
+                color: _selectedCategoryKey == null ? Colors.white : Colors.white,
+                fontWeight: _selectedCategoryKey == null ? FontWeight.bold : FontWeight.normal,
+              ),
               onSelected: (selected) {
                 setState(() { _selectedCategoryKey = null; });
               },
@@ -195,11 +198,18 @@ class _CatalogScreenState extends State<CatalogScreen> {
           ..._categoriesMap.entries.map((entry) {
             final categoryKey = entry.key;
             final categoryName = entry.value;
+            final isSelected = _selectedCategoryKey == categoryKey;
+            
             return Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4.0),
               child: ChoiceChip(
-                label: Text(categoryName), // Usa o nome de exibição
-                selected: _selectedCategoryKey == categoryKey,
+                label: Text(categoryName),
+                selected: isSelected,
+                selectedColor: Colors.blueGrey[800],
+                labelStyle: TextStyle(
+                  color: isSelected ? Colors.white : Colors.white,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                ),
                 onSelected: (selected) {
                   setState(() { _selectedCategoryKey = selected ? categoryKey : null; });
                 },
@@ -214,7 +224,6 @@ class _CatalogScreenState extends State<CatalogScreen> {
   // Widget para exibir um item do catálogo
   Widget _buildComponentCard(Component component, bool isAdmin) {
     return Card(
-      // color: const Color(0xFF2C2C2C), // Removido para usar o cardColor do Tema Claro
       margin: const EdgeInsets.only(bottom: 16.0),
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
@@ -273,7 +282,6 @@ class _CatalogScreenState extends State<CatalogScreen> {
                       style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
-                        // color: Colors.white, // Removido para usar a cor do tema
                       ),
                     ),
                     const SizedBox(height: 4),
