@@ -30,9 +30,8 @@ class KitService {
     return _kitsCollection.doc(id).delete();
   }
 
-  // --- MÉTODOS AUXILIARES PARA CARREGAR O KIT NO PROVIDER ---
+  // --- MÉTODOS AUXILIARES ---
 
-  /// Busca um componente pelo ID (para reconstruir o kit no RodBuilder)
   Future<Component?> getComponentById(String id) async {
     if (id.isEmpty) return null;
     try {
@@ -44,5 +43,32 @@ class KitService {
       print("Erro ao buscar componente do kit ($id): $e");
     }
     return null;
+  }
+
+  // Calcula preço total e verifica estoque considerando TUDO como lista
+  Future<Map<String, dynamic>> getKitSummary(KitModel kit) async {
+    double total = 0.0;
+    bool available = true;
+
+    Future<void> checkItem(String id, int qty) async {
+      if (id.isEmpty) return;
+      final comp = await getComponentById(id);
+      if (comp != null) {
+        total += (comp.price * qty);
+        if (comp.stock < qty) available = false;
+      }
+    }
+
+    // Itera sobre todas as listas
+    for (var item in kit.blanksIds) await checkItem(item['id'], (item['quantity'] ?? 1).toInt());
+    for (var item in kit.cabosIds) await checkItem(item['id'], (item['quantity'] ?? 1).toInt());
+    for (var item in kit.reelSeatsIds) await checkItem(item['id'], (item['quantity'] ?? 1).toInt());
+    for (var item in kit.passadoresIds) await checkItem(item['id'], (item['quantity'] ?? 1).toInt());
+    for (var item in kit.acessoriosIds) await checkItem(item['id'], (item['quantity'] ?? 1).toInt());
+
+    return {
+      'totalPrice': total,
+      'isAvailable': available,
+    };
   }
 }

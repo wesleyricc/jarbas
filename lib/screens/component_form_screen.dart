@@ -303,7 +303,7 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
       if (widget.component == null) {
         await _componentService.addComponent(component);
       } else {
-        await _componentService.updateComponent(widget.component!.id, component);
+        await _componentService.updateComponent(component);
       }
 
       if (mounted) {

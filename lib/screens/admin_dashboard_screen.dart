@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/quote_model.dart';
 import '../services/quote_service.dart';
 
@@ -14,7 +13,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   final QuoteService _quoteService = QuoteService();
   final List<String> _activeStatuses = ['aprovado', 'producao', 'concluido'];
 
-  // Estado dos Filtros
   late int _selectedMonth;
   late int _selectedYear;
   
@@ -29,13 +27,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     _selectedMonth = now.month;
     _selectedYear = now.year;
     
-    // Padrão de comparação: Mês anterior
     final prevDate = DateTime(now.year, now.month - 1);
     _compareMonth = prevDate.month;
     _compareYear = prevDate.year;
   }
-
-  // --- UI PRINCIPAL ---
 
   @override
   Widget build(BuildContext context) {
@@ -53,7 +48,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           
           final allQuotes = snapshot.data ?? [];
           
-          // Cálculos
           final mainData = _calculatePeriodData(allQuotes, _selectedMonth, _selectedYear);
           
           DashboardData? compareData;
@@ -68,7 +62,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // 1. FILTROS
                 _buildFiltersCard(),
                 const SizedBox(height: 24),
 
@@ -78,7 +71,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 ),
                 const SizedBox(height: 16),
                 
-                // 2. CARDS DE KPI
                 Row(
                   children: [
                     Expanded(
@@ -87,7 +79,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         value: mainData.revenue,
                         compareValue: compareData?.revenue,
                         icon: Icons.attach_money,
-                        color: Colors.blue[800]!, // Cor mais forte
+                        color: Colors.blue[800]!,
                       ),
                     ),
                     const SizedBox(width: 16),
@@ -97,7 +89,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         value: mainData.profit,
                         compareValue: compareData?.profit,
                         icon: Icons.trending_up,
-                        color: Colors.green[800]!, // Cor mais forte
+                        color: Colors.green[800]!,
                         isProfit: true,
                       ),
                     ),
@@ -106,7 +98,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 
                 const SizedBox(height: 32),
                 
-                // 3. GRÁFICO ANUAL (Com Rolagem)
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -114,7 +105,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       "Evolução ($_selectedYear)",
                       style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blueGrey),
                     ),
-                    // Legenda
                     Row(
                       children: [
                         Container(width: 12, height: 12, decoration: BoxDecoration(color: Colors.blueGrey[800], borderRadius: BorderRadius.circular(2))),
@@ -129,7 +119,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
                 const SizedBox(height: 32),
 
-                // 4. TOP COMPONENTES
                 Text(
                   "Top Itens (${_getMonthName(_selectedMonth)})",
                   style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blueGrey),
@@ -299,7 +288,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  // --- GRÁFICO CORRIGIDO (COM SCROLL) ---
   Widget _buildScrollableBarChart(List<MonthlyStat> data) {
     if (data.isEmpty) return const SizedBox.shrink();
 
@@ -332,7 +320,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  // Valor (Cor escura e fonte maior)
                   if (stat.total > 0)
                     Text(
                       stat.total > 1000 ? '${(stat.total/1000).toStringAsFixed(1)}k' : stat.total.toStringAsFixed(0),
@@ -342,22 +329,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         color: isSelected ? Colors.black87 : Colors.blueGrey[600]
                       ),
                     ),
-                  
                   const SizedBox(height: 6),
-                  
-                  // Barra (Altura fixa baseada em 140px)
                   Container(
                     height: 140 * percentage, 
-                    width: 32, // Barra mais larga
+                    width: 32,
                     decoration: BoxDecoration(
                       color: barColor,
                       borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
                     ),
                   ),
-                  
                   const SizedBox(height: 8),
-                  
-                  // Mês (Cor escura e fonte maior)
                   Text(
                     stat.monthName.substring(0, 3).toUpperCase(),
                     style: TextStyle(
@@ -375,7 +356,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  // --- TOP ITENS CORRIGIDO (LEGIBILIDADE) ---
   Widget _buildTopProductsList(List<MapEntry<String, int>> items) {
     if (items.isEmpty) {
       return Container(
@@ -409,7 +389,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.blueGrey[900])
                   ),
                 ),
-                // TÍTULO: Fonte maior e cor preta
                 title: Text(
                   name, 
                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.black87),
@@ -433,7 +412,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  // --- LÓGICA DE CÁLCULO ---
+  // --- LÓGICA DE CÁLCULO (CORRIGIDA) ---
 
   DashboardData _calculatePeriodData(List<Quote> allQuotes, int month, int year) {
     double revenue = 0;
@@ -450,20 +429,32 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       revenue += quote.totalPrice;
       
       double cost = 0;
-      cost += quote.blankCost ?? 0;
-      cost += (quote.caboCost ?? 0) * (quote.caboQuantity);
-      cost += quote.reelSeatCost ?? 0;
-      for (var i in quote.passadoresList) cost += (i['cost'] ?? 0.0) * (i['quantity'] ?? 1);
-      for (var i in quote.acessoriosList) cost += (i['cost'] ?? 0.0) * (i['quantity'] ?? 1);
+      
+      // Helper para processar listas
+      void processList(List<Map<String, dynamic>> items) {
+        for (var item in items) {
+          double itemCost = (item['cost'] ?? 0.0).toDouble();
+          
+          // CORREÇÃO AQUI: Cast seguro para num, depois para int
+          int qty = ((item['quantity'] ?? 1) as num).toInt();
+          
+          cost += itemCost * qty;
+          
+          String name = item['name'] ?? '';
+          if (name.isNotEmpty) {
+            // CORREÇÃO AQUI: Cast seguro para somar no mapa
+            components[name] = (components[name] ?? 0) + qty;
+          }
+        }
+      }
+
+      processList(quote.blanksList);
+      processList(quote.cabosList);
+      processList(quote.reelSeatsList);
+      processList(quote.passadoresList);
+      processList(quote.acessoriosList);
       
       profit += (quote.totalPrice - cost);
-
-      void add(String? n, int q) { if (n != null && n.isNotEmpty) components[n] = (components[n] ?? 0) + q; }
-      add(quote.blankName, 1);
-      add(quote.caboName, quote.caboQuantity);
-      add(quote.reelSeatName, 1);
-      for (var i in quote.passadoresList) add(i['name'], (i['quantity'] ?? 1).toInt());
-      for (var i in quote.acessoriosList) add(i['name'], (i['quantity'] ?? 1).toInt());
     }
 
     var sortedComponents = components.entries.toList()..sort((a, b) => b.value.compareTo(a.value));

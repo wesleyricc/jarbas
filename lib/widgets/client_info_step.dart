@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:flutter/services.dart';
-import '../../../providers/rod_builder_provider.dart';
+import 'package:mask_text_input_formatter/mask_text_input_formatter.dart'; // <--- Importante importar
+import '../providers/rod_builder_provider.dart';
 
 class ClientInfoStep extends StatefulWidget {
   const ClientInfoStep({super.key});
@@ -16,20 +16,21 @@ class _ClientInfoStepState extends State<ClientInfoStep> {
   late TextEditingController _cityController;
   late TextEditingController _stateController;
 
+  // --- CONFIGURAÇÃO DA MÁSCARA ---
+  final maskFormatter = MaskTextInputFormatter(
+    mask: '(##) #####-####', 
+    filter: { "#": RegExp(r'[0-9]') },
+    type: MaskAutoCompletionType.lazy,
+  );
+
   @override
   void initState() {
     super.initState();
     final provider = context.read<RodBuilderProvider>();
-    
     _nameController = TextEditingController(text: provider.clientName);
     _phoneController = TextEditingController(text: provider.clientPhone);
     _cityController = TextEditingController(text: provider.clientCity);
     _stateController = TextEditingController(text: provider.clientState);
-
-    _nameController.addListener(() => provider.setClientName(_nameController.text));
-    _phoneController.addListener(() => provider.setClientPhone(_phoneController.text));
-    _cityController.addListener(() => provider.setClientCity(_cityController.text));
-    _stateController.addListener(() => provider.setClientState(_stateController.text));
   }
 
   @override
@@ -41,131 +42,95 @@ class _ClientInfoStepState extends State<ClientInfoStep> {
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    // Encapsulamos em um Container Branco (Card) para contraste
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: Colors.white, // Fundo Branco
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey[300]!), // Borda sutil
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          )
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.person_outline, color: Colors.blueGrey[800]),
-              const SizedBox(width: 8),
-              Text(
-                'Informações de Contato',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.blueGrey[800], // Cor Escura para Contraste
-                ),
-              ),
-            ],
-          ),
-          const Divider(height: 32),
-          
-          TextFormField(
-            controller: _nameController,
-            decoration: const InputDecoration(
-              labelText: 'Nome Completo',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.person),
-            ),
-          ),
-          const SizedBox(height: 16),
-          
-          TextFormField(
-            controller: _phoneController,
-            decoration: const InputDecoration(
-              labelText: 'Telefone (com DDD)',
-              hintText: '(11) 99999-9999',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.phone),
-            ),
-            keyboardType: TextInputType.phone,
-            inputFormatters: [
-              FilteringTextInputFormatter.digitsOnly, // Aceita só números antes de formatar
-              PhoneInputFormatter(), // Aplica a máscara visual
-            ],
-          ),
-          const SizedBox(height: 16),
-          
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                flex: 3,
-                child: TextFormField(
-                  controller: _cityController,
-                  decoration: const InputDecoration(
-                    labelText: 'Cidade',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.location_city),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                flex: 1,
-                child: TextFormField(
-                  controller: _stateController,
-                  decoration: const InputDecoration(
-                    labelText: 'UF',
-                    counterText: "",
-                    border: OutlineInputBorder(),
-                  ),
-                  maxLength: 2,
-                  inputFormatters: [
-                    LengthLimitingTextInputFormatter(2),
-                    FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z]')),
-                    TextInputFormatter.withFunction((oldValue, newValue) => 
-                       TextEditingValue(
-                          text: newValue.text.toUpperCase(),
-                          selection: newValue.selection,
-                        ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
+  void _updateProvider() {
+    context.read<RodBuilderProvider>().updateClientInfo(
+      name: _nameController.text,
+      phone: _phoneController.text, // Salva já formatado ex: (11) 99999-9999
+      city: _cityController.text,
+      state: _stateController.text,
     );
   }
-}
 
-// Formatador simples para (XX) XXXXX-XXXX
-class PhoneInputFormatter extends TextInputFormatter {
   @override
-  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
-    final text = newValue.text.replaceAll(RegExp(r'[^\d]'), '');
-    if (text.length > 11) return oldValue; // Limita tamanho
-
-    final buffer = StringBuffer();
-    for (int i = 0; i < text.length; i++) {
-      if (i == 0) buffer.write('(');
-      if (i == 2) buffer.write(') ');
-      if (i == 7) buffer.write('-');
-      buffer.write(text[i]);
-    }
-
-    return TextEditingValue(
-      text: buffer.toString(),
-      selection: TextSelection.collapsed(offset: buffer.length),
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text(
+          'Seus Dados',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Preencha para podermos entrar em contato.',
+          style: TextStyle(color: Colors.grey),
+        ),
+        const SizedBox(height: 24),
+        
+        // Nome
+        TextField(
+          controller: _nameController,
+          decoration: const InputDecoration(
+            labelText: 'Nome Completo', 
+            border: OutlineInputBorder(),
+            prefixIcon: Icon(Icons.person_outline),
+          ),
+          textCapitalization: TextCapitalization.words,
+          onChanged: (_) => _updateProvider(),
+        ),
+        const SizedBox(height: 16),
+        
+        // Telefone com Máscara
+        TextField(
+          controller: _phoneController,
+          // Mudei para number para abrir o teclado numérico
+          keyboardType: TextInputType.number, 
+          // AQUI ENTRA A MÁSCARA
+          inputFormatters: [maskFormatter], 
+          decoration: const InputDecoration(
+            labelText: 'Telefone / WhatsApp', 
+            hintText: '(DDD) 99999-9999',
+            border: OutlineInputBorder(),
+            prefixIcon: Icon(Icons.phone_android),
+          ),
+          onChanged: (_) => _updateProvider(),
+        ),
+        const SizedBox(height: 16),
+        
+        // Cidade e Estado
+        Row(
+          children: [
+            Expanded(
+              flex: 2,
+              child: TextField(
+                controller: _cityController,
+                textCapitalization: TextCapitalization.words,
+                decoration: const InputDecoration(
+                  labelText: 'Cidade', 
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.location_city),
+                ),
+                onChanged: (_) => _updateProvider(),
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              flex: 1,
+              child: TextField(
+                controller: _stateController,
+                textCapitalization: TextCapitalization.characters, // Caixa alta automático
+                maxLength: 2, // Limita a 2 letras
+                decoration: const InputDecoration(
+                  labelText: 'UF', 
+                  border: OutlineInputBorder(),
+                  counterText: '', // Esconde o contador 0/2
+                ),
+                onChanged: (_) => _updateProvider(),
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

@@ -1,18 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/rod_builder_provider.dart';
-import '../../models/kit_model.dart'; 
-import '../../models/component_model.dart';
-import '../../services/kit_service.dart'; 
+import '../../models/kit_model.dart';
+import '../../services/kit_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/user_service.dart';
 import '../../services/whatsapp_service.dart';
 import '../widgets/client_info_step.dart';
-import '../widgets/component_selector.dart';
 import '../widgets/multi_component_step.dart';
 import '../widgets/customization_step.dart';
 import '../widgets/price_summary_bar.dart';
 import '../widgets/summary_step.dart';
+import '../widgets/passadores_step.dart'; // Se estiver usando o wrapper
+import '../widgets/acessorios_step.dart'; // Se estiver usando o wrapper
 
 class RodBuilderScreen extends StatefulWidget {
   const RodBuilderScreen({super.key});
@@ -22,10 +22,10 @@ class RodBuilderScreen extends StatefulWidget {
 }
 
 class _RodBuilderScreenState extends State<RodBuilderScreen> {
-  // Passos: 0:Client, 1:Modo, 2:Blank, 3:Cabo, 4:Reel, 5:Passadores, 6:Acessórios, 7:Custom, 8:Resumo
+  // Passos: 0:Client, 1:Modo, 2:Blank(s), 3:Cabo(s), 4:Reel(s), 5:Passadores, 6:Acessórios, 7:Custom, 8:Resumo
   int _currentStep = 0;
   bool _isLoading = false;
-  final int _totalSteps = 9; 
+  final int _totalSteps = 9;
 
   final AuthService _authService = AuthService();
   final UserService _userService = UserService();
@@ -38,7 +38,7 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final provider = context.read<RodBuilderProvider>();
       provider.clearBuild();
-      provider.fetchSettings(); 
+      provider.fetchSettings();
     });
     _isAdminFuture = _getAdminStatus();
   }
@@ -63,7 +63,7 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
 
     setState(() => _isLoading = true);
     bool success = await provider.saveQuote(user.uid, status: 'rascunho');
-    
+
     if (mounted) {
       if (success) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Rascunho salvo!'), backgroundColor: Colors.green));
@@ -110,10 +110,10 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
     setState(() => _isLoading = true);
     final success = await provider.loadKit(kit);
     setState(() => _isLoading = false);
-    
+
     if (success) {
       // Pula para o Blank (Passo 2) já preenchido
-      setState(() => _currentStep = 2); 
+      setState(() => _currentStep = 2);
     } else {
       _showError('Erro ao carregar kit.');
     }
@@ -152,7 +152,7 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
         future: _isAdminFuture,
         builder: (context, snapshot) {
           if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-          
+
           final bool isAdmin = snapshot.data!;
           final provider = context.watch<RodBuilderProvider>();
 
@@ -195,9 +195,9 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
   Widget _buildStepContent(int step, bool isAdmin, RodBuilderProvider provider) {
     return Container(
       key: ValueKey<int>(step),
-      color: const Color(0xFFF5F7FA), 
+      color: const Color(0xFFF5F7FA),
       padding: const EdgeInsets.all(24.0),
-      alignment: Alignment.topCenter, 
+      alignment: Alignment.topCenter,
       child: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -224,9 +224,9 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
         children: [
           if (_currentStep > 0)
             Expanded(child: OutlinedButton(onPressed: _isLoading ? null : _prevStep, style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16), side: BorderSide(color: Colors.grey[400]!)), child: const Text('Voltar', style: TextStyle(color: Colors.black87)))),
-          
+
           if (_currentStep > 0) const SizedBox(width: 16),
-          
+
           if (!isModeSelection)
             Expanded(
               flex: 2,
@@ -246,21 +246,44 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
   Widget _getStepWidget(int step, bool isAdmin, RodBuilderProvider provider) {
     switch (step) {
       case 0: return const ClientInfoStep();
-      case 1: return _buildModeSelectionStep(provider); // Passo Novo
-      
-      case 2: return ComponentSelector(
-          category: 'blank', selectedComponent: provider.selectedBlank, selectedVariation: provider.selectedBlankVariation,
-          isAdmin: isAdmin, onSelect: (c, v) => provider.selectBlank(c, variation: v));
-        
-      case 3: return ComponentSelector(
-          category: 'cabo', selectedComponent: provider.selectedCabo, selectedVariation: provider.selectedCaboVariation,
-          isAdmin: isAdmin, quantity: provider.caboQuantity, onQuantityChanged: (val) => provider.setCaboQuantity(val),
-          onSelect: (c, v) => provider.selectCabo(c, variation: v));
-      
-      case 4: return ComponentSelector(
-          category: 'reel_seat', selectedComponent: provider.selectedReelSeat, selectedVariation: provider.selectedReelSeatVariation,
-          isAdmin: isAdmin, onSelect: (c, v) => provider.selectReelSeat(c, variation: v));
-         
+      case 1: return _buildModeSelectionStep(provider);
+
+      case 2: return MultiComponentStep(
+          isAdmin: isAdmin,
+          categoryKey: 'blank',
+          title: 'Blank',
+          emptyMessage: 'Nenhum blank selecionado.',
+          emptyIcon: Icons.crop_square,
+          items: provider.selectedBlanksList,
+          onAdd: (c, v) => provider.addBlank(c, 1, variation: v),
+          onRemove: (i) => provider.removeBlank(i),
+          onUpdateQty: (i, q) => provider.updateBlankQty(i, q),
+      );
+
+      case 3: return MultiComponentStep(
+          isAdmin: isAdmin,
+          categoryKey: 'cabo',
+          title: 'Cabo',
+          emptyMessage: 'Nenhum cabo selecionado.',
+          emptyIcon: Icons.grid_goldenratio,
+          items: provider.selectedCabosList,
+          onAdd: (c, v) => provider.addCabo(c, 1, variation: v),
+          onRemove: (i) => provider.removeCabo(i),
+          onUpdateQty: (i, q) => provider.updateCaboQty(i, q),
+      );
+
+      case 4: return MultiComponentStep(
+          isAdmin: isAdmin,
+          categoryKey: 'reel_seat',
+          title: 'Reel Seat',
+          emptyMessage: 'Nenhum reel seat selecionado.',
+          emptyIcon: Icons.chair,
+          items: provider.selectedReelSeatsList,
+          onAdd: (c, v) => provider.addReelSeat(c, 1, variation: v),
+          onRemove: (i) => provider.removeReelSeat(i),
+          onUpdateQty: (i, q) => provider.updateReelSeatQty(i, q),
+      );
+
       case 5: return MultiComponentStep(
           isAdmin: isAdmin, categoryKey: 'passadores', title: 'Passador', emptyMessage: 'Nenhum passador selecionado.', emptyIcon: Icons.playlist_add,
           items: provider.selectedPassadoresList, onAdd: (c, v) => provider.addPassador(c, 1, variation: v),
@@ -270,7 +293,7 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
           isAdmin: isAdmin, categoryKey: 'acessorios', title: 'Acessório', emptyMessage: 'Nenhum acessório selecionado.', emptyIcon: Icons.extension_outlined,
           items: provider.selectedAcessoriosList, onAdd: (c, v) => provider.addAcessorio(c, 1, variation: v),
           onRemove: (i) => provider.removeAcessorio(i), onUpdateQty: (i, q) => provider.updateAcessorioQty(i, q));
-
+                
       case 7: return CustomizationStep(isAdmin: isAdmin);
       case 8: return SummaryStep(isAdmin: isAdmin);
       default: return const SizedBox.shrink();
@@ -283,7 +306,6 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Card Montar do Zero
         _buildModeCard(
           title: 'Montar do Zero',
           description: 'Escolha peça por peça e crie algo totalmente único.',
@@ -297,26 +319,25 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
         const SizedBox(height: 24),
         const Row(children: [Expanded(child: Divider()), Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Text("OU")), Expanded(child: Divider())]),
         const SizedBox(height: 24),
-        
+
         Text(
-          "Escolha um Kit Pronto:", 
+          "Usar Configuração Pronta (Template):",
           style: TextStyle(
-            fontSize: 18, 
-            fontWeight: FontWeight.bold, 
-            color: Colors.blueGrey[800] 
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: Colors.blueGrey[800]
           )
         ),
         const SizedBox(height: 16),
-        
-        // Carrossel de Kits
+
         SizedBox(
-          height: 280, // Altura do carrossel
+          height: 280,
           child: StreamBuilder<List<KitModel>>(
             stream: _kitService.getKitsStream(),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
               if (!snapshot.hasData || snapshot.data!.isEmpty) return const Center(child: Text("Nenhum kit disponível."));
-              
+
               return ListView.builder(
                 scrollDirection: Axis.horizontal,
                 itemCount: snapshot.data!.length,
@@ -369,43 +390,67 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
           onTap: () => _showKitDetails(context, kit, provider),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Imagem Capa
-              Expanded(
-                flex: 3,
-                child: ClipRRect(
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-                  child: kit.imageUrls.isNotEmpty
-                      ? Image.network(kit.imageUrls.first, fit: BoxFit.cover)
-                      : Container(color: Colors.grey[200], child: const Icon(Icons.image_not_supported)),
-                ),
-              ),
-              // Info Resumida
-              Expanded(
-                flex: 2,
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(kit.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16), maxLines: 1, overflow: TextOverflow.ellipsis),
-                      const SizedBox(height: 4),
-                      Text(kit.description, style: TextStyle(color: Colors.grey[600], fontSize: 12), maxLines: 2, overflow: TextOverflow.ellipsis),
-                      const Spacer(),
-                      // Botão visual "Ver Detalhes"
-                      Container(
-                        alignment: Alignment.center,
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        decoration: BoxDecoration(color: Colors.blueGrey[50], borderRadius: BorderRadius.circular(8)),
-                        child: Text("VER DETALHES", style: TextStyle(color: Colors.blueGrey[800], fontWeight: FontWeight.bold, fontSize: 12)),
-                      )
-                    ],
+          child: FutureBuilder<Map<String, dynamic>>(
+            future: _kitService.getKitSummary(kit),
+            builder: (context, snapshot) {
+              String priceText = '...';
+              
+              if (snapshot.hasData) {
+                priceText = 'R\$ ${(snapshot.data!['totalPrice'] as double).toStringAsFixed(2)}';
+              }
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    flex: 3,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        ClipRRect(
+                          borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                          child: kit.imageUrls.isNotEmpty
+                              // REMOVIDA LÓGICA DE INDISPONÍVEL/GRAYSCALE
+                              ? Image.network(kit.imageUrls.first, fit: BoxFit.cover)
+                              : Container(color: Colors.grey[200], child: const Icon(Icons.image_not_supported)),
+                        ),
+                        
+                        // Preço sempre visível
+                        Positioned(
+                          top: 8, right: 8,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(8)),
+                            child: Text(priceText, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ),
-            ],
+                  Expanded(
+                    flex: 2,
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(kit.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16), maxLines: 1, overflow: TextOverflow.ellipsis),
+                          const SizedBox(height: 4),
+                          Text(kit.description, style: TextStyle(color: Colors.grey[600], fontSize: 12), maxLines: 2, overflow: TextOverflow.ellipsis),
+                          const Spacer(),
+                          Container(
+                            alignment: Alignment.center,
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            decoration: BoxDecoration(color: Colors.blueGrey[50], borderRadius: BorderRadius.circular(8)),
+                            child: Text("VER DETALHES", style: TextStyle(color: Colors.blueGrey[800], fontWeight: FontWeight.bold, fontSize: 12)),
+                          )
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
         ),
       ),
@@ -414,29 +459,26 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
 
   // --- LÓGICA DE DETALHES DO KIT (MODAL) ---
 
-  Future<Map<String, dynamic>> _fetchKitComponentsData(KitModel kit) async {
-    final blank = await _kitService.getComponentById(kit.blankId);
-    final cabo = await _kitService.getComponentById(kit.caboId);
-    final reel = await _kitService.getComponentById(kit.reelSeatId);
-    
-    List<String> passadoresNames = [];
-    for (var item in kit.passadoresIds) {
-      final c = await _kitService.getComponentById(item['id']);
-      if (c != null) passadoresNames.add("${c.name} (${item['quantity']}x)");
-    }
-
-    List<String> acessoriosNames = [];
-    for (var item in kit.acessoriosIds) {
-      final c = await _kitService.getComponentById(item['id']);
-      if (c != null) acessoriosNames.add("${c.name} (${item['quantity']}x)");
+  Future<Map<String, List<String>>> _fetchKitComponentsData(KitModel kit) async {
+    Future<List<String>> resolveList(List<Map<String, dynamic>> items) async {
+      List<String> names = [];
+      for (var item in items) {
+        final c = await _kitService.getComponentById(item['id']);
+        if (c != null) {
+          String suffix = "";
+          if (item['variation'] != null) suffix += " - ${item['variation']}";
+          names.add("${c.name}$suffix (${item['quantity']}x)");
+        }
+      }
+      return names;
     }
 
     return {
-      'blank': blank?.name ?? 'Não encontrado',
-      'cabo': cabo?.name ?? 'Não encontrado',
-      'reel': reel?.name ?? 'Não encontrado',
-      'passadores': passadoresNames,
-      'acessorios': acessoriosNames,
+      'blanks': await resolveList(kit.blanksIds),
+      'cabos': await resolveList(kit.cabosIds),
+      'reelSeats': await resolveList(kit.reelSeatsIds),
+      'passadores': await resolveList(kit.passadoresIds),
+      'acessorios': await resolveList(kit.acessoriosIds),
     };
   }
 
@@ -457,18 +499,15 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
             ),
             child: Column(
               children: [
-                // Indicador de arraste
                 const SizedBox(height: 16),
                 Container(width: 40, height: 5, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10))),
                 const SizedBox(height: 16),
 
-                // Conteúdo Rolável
                 Expanded(
                   child: ListView(
                     controller: scrollController,
                     padding: EdgeInsets.zero,
                     children: [
-                      // 1. Galeria de Fotos
                       if (kit.imageUrls.isNotEmpty)
                         SizedBox(
                           height: 250,
@@ -487,46 +526,32 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // 2. Título e Descrição
                             Text(kit.name, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.black87)),
                             const SizedBox(height: 8),
                             Text(kit.description, style: const TextStyle(fontSize: 16, color: Colors.black87, height: 1.4)),
-                            
+
                             const Divider(height: 40),
-                            Text("Especificações Técnicas", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blueGrey[900])),
+                            Text("Configuração do Template", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blueGrey[900])),
                             const SizedBox(height: 16),
 
-                            // 3. Lista de Componentes (Async)
-                            FutureBuilder<Map<String, dynamic>>(
+                            FutureBuilder<Map<String, List<String>>>(
                               future: _fetchKitComponentsData(kit),
                               builder: (context, snapshot) {
                                 if (snapshot.connectionState == ConnectionState.waiting) {
                                   return const Padding(padding: EdgeInsets.all(20), child: Center(child: CircularProgressIndicator()));
                                 }
                                 if (snapshot.hasError) return const Text("Erro ao carregar detalhes.");
-                                
+
                                 final data = snapshot.data!;
-                                
+
                                 return Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    _buildDetailRow(Icons.crop_square, "Blank", data['blank'], kit.blankVariation),
-                                    _buildDetailRow(Icons.grid_goldenratio, "Cabo", data['cabo'], kit.caboVariation),
-                                    _buildDetailRow(Icons.chair, "Reel Seat", data['reel'], kit.reelSeatVariation),
-                                    
-                                    // AQUI: Usando o novo helper para Passadores
-                                    _buildDetailList(
-                                      Icons.format_list_bulleted, 
-                                      "Passadores", 
-                                      List<String>.from(data['passadores']),
-                                    ),
-
-                                    // AQUI: Usando o novo helper para Acessórios
-                                    _buildDetailList(
-                                      Icons.extension, 
-                                      "Acessórios", 
-                                      List<String>.from(data['acessorios']),
-                                    ),
+                                    _buildDetailList(Icons.crop_square, "Blanks", data['blanks']!),
+                                    _buildDetailList(Icons.grid_goldenratio, "Cabos", data['cabos']!),
+                                    _buildDetailList(Icons.chair, "Reel Seats", data['reelSeats']!),
+                                    _buildDetailList(Icons.format_list_bulleted, "Passadores", data['passadores']!),
+                                    _buildDetailList(Icons.extension, "Acessórios", data['acessorios']!),
                                   ],
                                 );
                               },
@@ -538,7 +563,6 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
                   ),
                 ),
 
-                // 4. Botão de Ação
                 Container(
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(color: Colors.white, boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, -5))]),
@@ -555,7 +579,7 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
                           Navigator.pop(context);
                           _selectKitAndProceed(kit, provider);
                         },
-                        child: const Text("SELECIONAR ESTE KIT", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                        child: const Text("CARREGAR ESTA CONFIGURAÇÃO", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                       ),
                     ),
                   ),
@@ -568,35 +592,9 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
     );
   }
 
-  // --- HELPERS VISUAIS ---
-
-  // Helper para Item Único (Blank, Cabo, Reel)
-  Widget _buildDetailRow(IconData icon, String label, String value, String? variation) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12.0),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 20, color: Colors.blueGrey[800]),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.blueGrey[700])),
-                Text("$value${variation != null ? ' ($variation)' : ''}", style: const TextStyle(fontSize: 15, color: Colors.black87)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // (NOVO) Helper para Listas (Passadores, Acessórios)
   Widget _buildDetailList(IconData icon, String label, List<String> items) {
     if (items.isEmpty) return const SizedBox.shrink();
-    
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 12.0),
       child: Row(
@@ -626,9 +624,9 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
     switch (step) {
       case 0: return 'Vamos começar!';
       case 1: return 'Como deseja montar?';
-      case 2: return 'Escolha o Blank';
-      case 3: return 'Escolha o Cabo';
-      case 4: return 'Escolha o Reel Seat';
+      case 2: return 'Escolha os Blanks';
+      case 3: return 'Escolha os Cabos';
+      case 4: return 'Escolha os Reel Seats';
       case 5: return 'Escolha os Passadores';
       case 6: return 'Acessórios';
       case 7: return 'Personalize';
@@ -641,9 +639,9 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
     switch (step) {
       case 0: return 'Precisamos de alguns dados para entrar em contato.';
       case 1: return 'Você pode começar do zero ou usar um modelo pronto.';
-      case 2: return 'O corpo da vara. Selecione a base ideal.';
-      case 3: return 'O conforto da pegada. Defina o material e a quantidade.';
-      case 4: return 'Onde sua carretilha ou molinete será fixado.';
+      case 2: return 'Selecione a base da vara (pode ser mais de uma).';
+      case 3: return 'Defina os cabos e materiais.';
+      case 4: return 'Fixadores para a carretilha/molinete.';
       case 5: return 'Adicione quantos passadores forem necessários.';
       case 6: return 'Escolha itens extras para sua vara.';
       case 7: return 'Dê o seu toque final com a gravação.';

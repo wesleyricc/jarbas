@@ -130,7 +130,7 @@ class _AdminMassUpdateScreenState extends State<AdminMassUpdateScreen> {
         List<Component> toUpdate = _currentFilteredList.where((c) => _selectedIds.contains(c.id)).toList();
         
         await _componentService.batchUpdateSpecificComponents(
-          componentsToUpdate: toUpdate,
+          componentsToUpdate: toUpdate.map((c) => c.id).toList(),
           increasePercent: percent,
           currentMargin: _defaultMargin,
           supplierDiscount: _supplierDiscount, // (NOVO) Passa o desconto

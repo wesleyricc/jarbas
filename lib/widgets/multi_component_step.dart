@@ -1,18 +1,18 @@
 import 'package:flutter/material.dart';
-import '../models/component_model.dart'; // Import para Component
-import '../providers/rod_builder_provider.dart'; // Import para RodItem
+import '../models/component_model.dart';
+import '../providers/rod_builder_provider.dart'; // Para acessar RodItem
 import 'component_selector.dart';
 
 class MultiComponentStep extends StatefulWidget {
   final bool isAdmin;
-  final String categoryKey; // 'passadores' ou 'acessorios'
+  final String categoryKey;
   final String title;
   final String emptyMessage;
   final IconData emptyIcon;
+  final List<RodItem> items; // Lista atual do Provider
   
-  // Callbacks para ações do Provider
-  final List<RodItem> items;
-  final Function(Component, String?) onAdd;
+  // Callbacks
+  final Function(Component, String?) onAdd; // Mantido para compatibilidade simples
   final Function(int) onRemove;
   final Function(int, int) onUpdateQty;
 
@@ -35,16 +35,16 @@ class MultiComponentStep extends StatefulWidget {
 
 class _MultiComponentStepState extends State<MultiComponentStep> {
   
-  void _openAddModal(BuildContext context) {
+  void _openMultiSelector() {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => DraggableScrollableSheet(
-        initialChildSize: 0.8,
-        minChildSize: 0.5,
+      builder: (_) => DraggableScrollableSheet(
+        initialChildSize: 0.85,
+        minChildSize: 0.6,
         maxChildSize: 0.95,
-        builder: (context, scrollController) {
+        builder: (_, scrollController) {
           return Container(
             decoration: const BoxDecoration(
               color: Colors.white,
@@ -52,28 +52,28 @@ class _MultiComponentStepState extends State<MultiComponentStep> {
             ),
             child: Column(
               children: [
-                const SizedBox(height: 16),
+                // Header do Modal
+                const SizedBox(height: 12),
                 Container(width: 40, height: 5, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10))),
                 Padding(
                   padding: const EdgeInsets.all(16.0),
-                  child: Text("Adicionar ${widget.title}", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87)),
+                  child: Text("Selecionar ${widget.title}(s)", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                 ),
                 const Divider(height: 1),
+                
+                // O Seletor
                 Expanded(
-                  child: SingleChildScrollView(
-                    controller: scrollController,
-                    child: ComponentSelector(
-                      category: widget.categoryKey,
-                      selectedComponent: null,
-                      isAdmin: widget.isAdmin,
-                      onQuantityChanged: null,
-                      onSelect: (component, variation) {
-                        if (component != null) {
-                          widget.onAdd(component, variation);
-                          Navigator.pop(context);
-                        }
-                      },
-                    ),
+                  child: ComponentSelector(
+                    category: widget.categoryKey,
+                    isAdmin: widget.isAdmin,
+                    // Aqui está a mágica da múltipla seleção
+                    onMultiSelectConfirm: (selectedList) {
+                      for (var item in selectedList) {
+                        // Chama o onAdd para cada item selecionado
+                        widget.onAdd(item['comp'], item['var']);
+                      }
+                      Navigator.pop(context); // Fecha o modal só no final
+                    },
                   ),
                 ),
               ],
@@ -89,6 +89,25 @@ class _MultiComponentStepState extends State<MultiComponentStep> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        // Botão de Adicionar
+        ElevatedButton.icon(
+          onPressed: _openMultiSelector,
+          icon: const Icon(Icons.add),
+          label: Text('Adicionar ${widget.title}'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.blueGrey[50],
+            foregroundColor: Colors.blueGrey[900],
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+              side: BorderSide(color: Colors.blueGrey[200]!),
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Lista de Itens Selecionados
         if (widget.items.isEmpty)
           Container(
             padding: const EdgeInsets.all(32),
@@ -96,13 +115,13 @@ class _MultiComponentStepState extends State<MultiComponentStep> {
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey[300]!),
+              border: Border.all(color: Colors.grey[200]!)
             ),
             child: Column(
               children: [
-                Icon(widget.emptyIcon, size: 48, color: Colors.grey[400]),
+                Icon(widget.emptyIcon, size: 48, color: Colors.grey[300]),
                 const SizedBox(height: 8),
-                Text(widget.emptyMessage, style: TextStyle(color: Colors.grey[600])),
+                Text(widget.emptyMessage, style: TextStyle(color: Colors.grey[500])),
               ],
             ),
           )
@@ -111,129 +130,73 @@ class _MultiComponentStepState extends State<MultiComponentStep> {
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             itemCount: widget.items.length,
-            separatorBuilder: (c, i) => const SizedBox(height: 12),
+            separatorBuilder: (c, i) => const SizedBox(height: 8),
             itemBuilder: (context, index) {
-              final item = widget.items[index];
-              return _buildTile(index, item);
+              final rodItem = widget.items[index];
+              return Card(
+                elevation: 0,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8), side: BorderSide(color: Colors.grey[200]!)),
+                child: Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: Row(
+                    children: [
+                      // Imagem
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: rodItem.component.imageUrl.isNotEmpty
+                            ? Image.network(rodItem.component.imageUrl, width: 50, height: 50, fit: BoxFit.cover)
+                            : Container(width: 50, height: 50, color: Colors.grey[100], child: const Icon(Icons.image, size: 20, color: Colors.grey)),
+                      ),
+                      const SizedBox(width: 12),
+                      
+                      // Infos
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(rodItem.component.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                            if (rodItem.variation != null)
+                              Text("Var: ${rodItem.variation}", style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+                            
+                            // Preço Unitário
+                            const SizedBox(height: 4),
+                            Text(
+                              "R\$ ${rodItem.component.price.toStringAsFixed(2)}", 
+                              style: TextStyle(fontSize: 12, color: Colors.blueGrey[700], fontWeight: FontWeight.bold)
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      // Controle de Quantidade
+                      Row(
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.remove_circle_outline, color: Colors.grey),
+                            onPressed: () {
+                              if (rodItem.quantity > 1) {
+                                widget.onUpdateQty(index, rodItem.quantity - 1);
+                              } else {
+                                widget.onRemove(index);
+                              }
+                            },
+                          ),
+                          Text('${rodItem.quantity}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                          IconButton(
+                            icon: const Icon(Icons.add_circle_outline, color: Colors.blueGrey),
+                            onPressed: () {
+                              widget.onUpdateQty(index, rodItem.quantity + 1);
+                            },
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              );
             },
           ),
-
-        const SizedBox(height: 16),
-
-        OutlinedButton.icon(
-          onPressed: () => _openAddModal(context),
-          icon: const Icon(Icons.add),
-          label: Text("ADICIONAR ${widget.title.toUpperCase()}"),
-          style: OutlinedButton.styleFrom(
-            padding: const EdgeInsets.all(16),
-            side: BorderSide(color: Colors.blueGrey[800]!, width: 1.5),
-            foregroundColor: Colors.blueGrey[800],
-            backgroundColor: Colors.white,
-          ),
-        ),
       ],
-    );
-  }
-
-  Widget _buildTile(int index, RodItem item) {
-    String displayName = item.component.name;
-    if (item.variation != null && item.variation!.isNotEmpty) {
-      displayName += " (${item.variation})";
-    }
-
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.blueGrey[100]!),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 4)],
-      ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        dense: true,
-        
-        // --- CORREÇÃO AQUI: SizedBox força o tamanho exato ---
-        leading: SizedBox(
-          width: 48, 
-          height: 48,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: item.component.imageUrl.isNotEmpty
-                ? Image.network(
-                    item.component.imageUrl, 
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) => 
-                      Container(color: Colors.grey[200], child: const Icon(Icons.broken_image, size: 20, color: Colors.grey)),
-                  )
-                : Container(
-                    color: Colors.grey[200], 
-                    child: const Icon(Icons.image, size: 20, color: Colors.grey)
-                  ),
-          ),
-        ),
-        // ----------------------------------------------------
-
-        title: Text(
-          displayName, 
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black87),
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-        ),
-        
-        subtitle: widget.isAdmin 
-          ? Text('R\$ ${item.component.price.toStringAsFixed(2)} un', style: TextStyle(fontSize: 12, color: Colors.grey[600]))
-          : null,
-          
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min, 
-          children: [
-            // Botão Menos
-            SizedBox(
-              width: 32,
-              child: IconButton(
-                icon: const Icon(Icons.remove_circle_outline, size: 22, color: Colors.grey),
-                padding: EdgeInsets.zero,
-                onPressed: () {
-                  if (item.quantity > 1) widget.onUpdateQty(index, item.quantity - 1);
-                  else widget.onRemove(index);
-                },
-              ),
-            ),
-            
-            // Texto Quantidade
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4.0),
-              child: Text(
-                '${item.quantity}', 
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.black87),
-                textAlign: TextAlign.center,
-              ),
-            ),
-
-            // Botão Mais
-            SizedBox(
-              width: 32,
-              child: IconButton(
-                icon: Icon(Icons.add_circle_outline, size: 22, color: Colors.blueGrey[700]),
-                padding: EdgeInsets.zero,
-                onPressed: () => widget.onUpdateQty(index, item.quantity + 1),
-              ),
-            ),
-
-            const SizedBox(width: 4),
-
-            // Botão Excluir
-            SizedBox(
-              width: 32,
-              child: IconButton(
-                icon: Icon(Icons.delete_outline, color: Colors.red[700], size: 22),
-                padding: EdgeInsets.zero,
-                onPressed: () => widget.onRemove(index),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

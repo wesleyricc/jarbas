@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../../providers/rod_builder_provider.dart';
+import '../providers/rod_builder_provider.dart';
 
 class CustomizationStep extends StatefulWidget {
   final bool isAdmin;
@@ -11,62 +11,72 @@ class CustomizationStep extends StatefulWidget {
 }
 
 class _CustomizationStepState extends State<CustomizationStep> {
-  // Removed: _corLinhaController
-  late TextEditingController _gravacaoController;
+  late TextEditingController _textController;
+  late TextEditingController _costController;
 
   @override
   void initState() {
     super.initState();
     final provider = context.read<RodBuilderProvider>();
-    _gravacaoController = TextEditingController(text: provider.gravacao);
-    _gravacaoController.addListener(() => provider.setGravacao(_gravacaoController.text));
-  }
-
-  @override
-  void dispose() {
-    _gravacaoController.dispose();
-    super.dispose();
+    _textController = TextEditingController(text: provider.customizationText);
+    _costController = TextEditingController(text: provider.extraLaborCost > 0 ? provider.extraLaborCost.toStringAsFixed(2) : '');
   }
 
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<RodBuilderProvider>();
-    final price = provider.customizationPrice;
 
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey[300]!),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.brush, color: Colors.blueGrey[800]),
-              const SizedBox(width: 8),
-              Text('Detalhes Finais', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blueGrey[800])),
-            ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text(
+          'Detalhes da Personalização',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Descreva cores, trançados, nome para gravação ou qualquer detalhe específico.',
+          style: TextStyle(color: Colors.grey),
+        ),
+        const SizedBox(height: 16),
+        TextField(
+          controller: _textController,
+          maxLines: 4,
+          decoration: const InputDecoration(
+            hintText: 'Ex: Gravar nome "João Silva", linha azul metálica...',
+            border: OutlineInputBorder(),
           ),
-          const Divider(height: 32),
-          
-          // REMOVIDO: Campo Cor da Linha
-          
-          TextFormField(
-            controller: _gravacaoController,
-            decoration: InputDecoration(
-              labelText: 'Gravação (Nome ou Frase)',
-              border: const OutlineInputBorder(),
-              prefixIcon: const Icon(Icons.text_fields),
-              helperText: (widget.isAdmin && price > 0) ? 'Adicional de R\$ ${price.toStringAsFixed(2)}' : null,
-              helperStyle: TextStyle(color: (widget.isAdmin && price > 0) ? Colors.orange[800] : Colors.grey, fontWeight: FontWeight.bold),
+          onChanged: (value) => provider.setCustomizationText(value),
+        ),
+        
+        // --- CAMPO DE CUSTO EXTRA (SÓ ADMIN) ---
+        if (widget.isAdmin) ...[
+          const SizedBox(height: 24),
+          const Divider(),
+          const SizedBox(height: 16),
+          const Text(
+            'Custos Adicionais (Admin)',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.blueGrey),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _costController,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              labelText: 'Mão de Obra Extra / Personalização Especial (R\$)',
+              prefixText: 'R\$ ',
+              border: OutlineInputBorder(),
+              helperText: 'Este valor será somado ao total do orçamento.',
             ),
+            onChanged: (value) {
+              // Converte vírgula para ponto se necessário
+              String safeValue = value.replaceAll(',', '.');
+              double? cost = double.tryParse(safeValue);
+              provider.setExtraLaborCost(cost ?? 0.0);
+            },
           ),
-        ],
-      ),
+        ]
+      ],
     );
   }
 }

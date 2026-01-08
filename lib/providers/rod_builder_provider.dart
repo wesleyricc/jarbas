@@ -1,304 +1,253 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/component_model.dart';
-import '../models/kit_model.dart';
 import '../models/quote_model.dart';
+import '../models/kit_model.dart';
 import '../services/quote_service.dart';
-import '../services/config_service.dart';
 
-// Classe auxiliar para itens da lista
 class RodItem {
   final Component component;
   int quantity;
   String? variation;
-
-  RodItem({required this.component, this.quantity = 1, this.variation});
   
-  double get totalPrice => component.price * quantity;
+  RodItem({
+    required this.component, 
+    this.quantity = 1, 
+    this.variation
+  });
 }
 
-class RodBuilderProvider with ChangeNotifier {
-  final QuoteService _quoteService = QuoteService();
-  final ConfigService _configService = ConfigService();
+class RodBuilderProvider extends ChangeNotifier {
+  final QuoteService _quoteService = QuoteService(); 
 
-  // Componentes
-  Component? _selectedBlank;
-  Component? _selectedCabo;
-  Component? _selectedReelSeat;
+  // Dados do Cliente
+  String clientName = '';
+  String clientPhone = '';
+  String clientCity = '';
+  String clientState = '';
+
+  // --- LISTAS PARA TODAS AS ETAPAS ---
+  List<RodItem> _selectedBlanks = [];
+  List<RodItem> _selectedCabos = [];
+  List<RodItem> _selectedReelSeats = [];
+  List<RodItem> _selectedPassadores = [];
+  List<RodItem> _selectedAcessorios = [];
   
-  // Variações
-  String? _selectedBlankVariation;
-  String? _selectedCaboVariation;
-  String? _selectedReelSeatVariation;
-
-  // Listas
-  final List<RodItem> _selectedPassadoresList = [];
-  final List<RodItem> _selectedAcessoriosList = [];
-
-  // Quantidades
-  int _caboQuantity = 1;
-
-  // Personalização e Configuração
-  // Alterado padrão para 0.0 para evitar o "25.0" fantasma se falhar o carregamento
-  double _customizationPrice = 0.0; 
-  
-  String _corLinha = '';
-  String _gravacao = '';
-  String _clientName = '';
-  String _clientPhone = '';
-  String _clientCity = '';
-  String _clientState = '';
-  
+  // Customização e Custos Extras
+  String customizationText = '';
+  double _extraLaborCost = 0.0;
   double _totalPrice = 0.0;
 
-  // --- GETTERS ---
-  Component? get selectedBlank => _selectedBlank;
-  String? get selectedBlankVariation => _selectedBlankVariation;
-  
-  Component? get selectedCabo => _selectedCabo;
-  String? get selectedCaboVariation => _selectedCaboVariation;
-  int get caboQuantity => _caboQuantity;
-  
-  Component? get selectedReelSeat => _selectedReelSeat;
-  String? get selectedReelSeatVariation => _selectedReelSeatVariation;
-  
-  List<RodItem> get selectedPassadoresList => _selectedPassadoresList;
-  List<RodItem> get selectedAcessoriosList => _selectedAcessoriosList;
-
+  // Getters
+  List<RodItem> get selectedBlanksList => _selectedBlanks;
+  List<RodItem> get selectedCabosList => _selectedCabos;
+  List<RodItem> get selectedReelSeatsList => _selectedReelSeats;
+  List<RodItem> get selectedPassadoresList => _selectedPassadores;
+  List<RodItem> get selectedAcessoriosList => _selectedAcessorios;
+  double get extraLaborCost => _extraLaborCost;
   double get totalPrice => _totalPrice;
-  double get customizationPrice => _customizationPrice;
-  String get corLinha => _corLinha;
-  String get gravacao => _gravacao;
-  String get clientName => _clientName;
-  String get clientPhone => _clientPhone;
-  String get clientCity => _clientCity;
-  String get clientState => _clientState;
 
-  Future<bool> loadKit(KitModel kit) async {
-    try {
-      // Importe o KitService e ComponentService se necessário, 
-      // ou instancie aqui dentro
-      final FirebaseFirestore firestore = FirebaseFirestore.instance;
-      
-      // Helper para buscar componente
-      Future<Component?> fetchComp(String id) async {
-        if (id.isEmpty) return null;
-        final doc = await firestore.collection('components').doc(id).get();
-        if (doc.exists) return Component.fromFirestore(doc);
-        return null;
-      }
+  // --- MÉTODOS DE AÇÃO ---
 
-      // 1. Carrega Componentes Principais
-      _selectedBlank = await fetchComp(kit.blankId);
-      _selectedBlankVariation = kit.blankVariation;
-      
-      _selectedCabo = await fetchComp(kit.caboId);
-      _selectedCaboVariation = kit.caboVariation;
-      _caboQuantity = kit.caboQuantity;
-      
-      _selectedReelSeat = await fetchComp(kit.reelSeatId);
-      _selectedReelSeatVariation = kit.reelSeatVariation;
-
-      // 2. Carrega Listas (Passadores e Acessórios)
-      _selectedPassadoresList.clear();
-      for (var itemMap in kit.passadoresIds) {
-        final comp = await fetchComp(itemMap['id']);
-        if (comp != null) {
-          _selectedPassadoresList.add(RodItem(
-            component: comp,
-            quantity: (itemMap['quantity'] ?? 1).toInt(),
-            variation: itemMap['variation'],
-          ));
-        }
-      }
-
-      _selectedAcessoriosList.clear();
-      for (var itemMap in kit.acessoriosIds) {
-        final comp = await fetchComp(itemMap['id']);
-        if (comp != null) {
-          _selectedAcessoriosList.add(RodItem(
-            component: comp,
-            quantity: (itemMap['quantity'] ?? 1).toInt(),
-            variation: itemMap['variation'],
-          ));
-        }
-      }
-
-      _calculateTotalPrice();
-      notifyListeners();
-      return true;
-    } catch (e) {
-      print("Erro ao carregar kit: $e");
-      return false;
-    }
+  // Blanks
+  void addBlank(Component c, int qty, {String? variation}) {
+    _selectedBlanks.add(RodItem(component: c, quantity: qty, variation: variation));
+    _calculateTotalPrice();
+    notifyListeners();
   }
-
-  // --- CARREGAR CONFIGURAÇÕES ---
-  Future<void> fetchSettings() async {
-    try {
-      final settings = await _configService.getSettings();
-      
-      // Garante que converte para double mesmo se vier int ou string do banco
-      var priceData = settings['customizationPrice'];
-      if (priceData is int) {
-        _customizationPrice = priceData.toDouble();
-      } else if (priceData is double) {
-        _customizationPrice = priceData;
-      } else {
-        _customizationPrice = 25.0; // Fallback apenas se vier nulo ou inválido
-      }
-
-      print("DEBUG: Preço Customização Carregado: $_customizationPrice");
-      
-      _calculateTotalPrice();
-      notifyListeners();
-    } catch (e) {
-      print("Erro ao carregar settings no provider: $e");
-    }
+  void removeBlank(int index) {
+    _selectedBlanks.removeAt(index);
+    _calculateTotalPrice();
+    notifyListeners();
   }
-
-  // --- SELEÇÃO DE COMPONENTES ---
-
-  void selectBlank(Component? c, {String? variation}) {
-    _selectedBlank = c;
-    _selectedBlankVariation = variation;
+  void updateBlankQty(int index, int qty) {
+    _selectedBlanks[index].quantity = qty;
     _calculateTotalPrice();
     notifyListeners();
   }
 
-  void selectCabo(Component? c, {String? variation}) {
-    _selectedCabo = c;
-    _selectedCaboVariation = variation;
+  // Cabos
+  void addCabo(Component c, int qty, {String? variation}) {
+    _selectedCabos.add(RodItem(component: c, quantity: qty, variation: variation));
     _calculateTotalPrice();
     notifyListeners();
   }
-  
-  void setCaboQuantity(int q) {
-    if (q < 1) return;
-    _caboQuantity = q;
+  void removeCabo(int index) {
+    _selectedCabos.removeAt(index);
     _calculateTotalPrice();
     notifyListeners();
   }
-
-  void selectReelSeat(Component? c, {String? variation}) {
-    _selectedReelSeat = c;
-    _selectedReelSeatVariation = variation;
+  void updateCaboQty(int index, int qty) {
+    _selectedCabos[index].quantity = qty;
     _calculateTotalPrice();
     notifyListeners();
   }
 
-  // --- PASSADORES ---
-  void addPassador(Component component, int qty, {String? variation}) {
-    final index = _selectedPassadoresList.indexWhere((item) => item.component.id == component.id && item.variation == variation);
-    if (index >= 0) {
-      _selectedPassadoresList[index].quantity += qty;
-    } else {
-      _selectedPassadoresList.add(RodItem(component: component, quantity: qty, variation: variation));
-    }
+  // Reel Seats
+  void addReelSeat(Component c, int qty, {String? variation}) {
+    _selectedReelSeats.add(RodItem(component: c, quantity: qty, variation: variation));
+    _calculateTotalPrice();
+    notifyListeners();
+  }
+  void removeReelSeat(int index) {
+    _selectedReelSeats.removeAt(index);
+    _calculateTotalPrice();
+    notifyListeners();
+  }
+  void updateReelSeatQty(int index, int qty) {
+    _selectedReelSeats[index].quantity = qty;
     _calculateTotalPrice();
     notifyListeners();
   }
 
+  // Passadores
+  void addPassador(Component c, int qty, {String? variation}) {
+    _selectedPassadores.add(RodItem(component: c, quantity: qty, variation: variation));
+    _calculateTotalPrice();
+    notifyListeners();
+  }
   void removePassador(int index) {
-    _selectedPassadoresList.removeAt(index);
+    _selectedPassadores.removeAt(index);
     _calculateTotalPrice();
     notifyListeners();
   }
-  
-  void updatePassadorQty(int index, int newQty) {
-    if (newQty < 1) return;
-    _selectedPassadoresList[index].quantity = newQty;
-    _calculateTotalPrice();
-    notifyListeners();
-  }
-
-  // --- ACESSÓRIOS ---
-  void addAcessorio(Component component, int qty, {String? variation}) {
-    final index = _selectedAcessoriosList.indexWhere((item) => item.component.id == component.id && item.variation == variation);
-    if (index >= 0) {
-      _selectedAcessoriosList[index].quantity += qty;
-    } else {
-      _selectedAcessoriosList.add(RodItem(component: component, quantity: qty, variation: variation));
-    }
+  void updatePassadorQty(int index, int qty) {
+    _selectedPassadores[index].quantity = qty;
     _calculateTotalPrice();
     notifyListeners();
   }
 
+  // Acessórios
+  void addAcessorio(Component c, int qty, {String? variation}) {
+    _selectedAcessorios.add(RodItem(component: c, quantity: qty, variation: variation));
+    _calculateTotalPrice();
+    notifyListeners();
+  }
   void removeAcessorio(int index) {
-    _selectedAcessoriosList.removeAt(index);
+    _selectedAcessorios.removeAt(index);
     _calculateTotalPrice();
     notifyListeners();
   }
-  
-  void updateAcessorioQty(int index, int newQty) {
-    if (newQty < 1) return;
-    _selectedAcessoriosList[index].quantity = newQty;
-    _calculateTotalPrice();
-    notifyListeners();
-  }
-
-  // --- PERSONALIZAÇÃO ---
-  void setCorLinha(String v) { _corLinha = v; notifyListeners(); }
-  
-  void setGravacao(String v) {
-    _gravacao = v;
+  void updateAcessorioQty(int index, int qty) {
+    _selectedAcessorios[index].quantity = qty;
     _calculateTotalPrice();
     notifyListeners();
   }
 
-  void setClientName(String v) { _clientName = v; notifyListeners(); }
-  void setClientPhone(String v) { _clientPhone = v; notifyListeners(); }
-  void setClientCity(String v) { _clientCity = v; notifyListeners(); }
-  void setClientState(String v) { _clientState = v; notifyListeners(); }
+  // Dados do Cliente
+  void updateClientInfo({required String name, required String phone, required String city, required String state}) {
+    clientName = name;
+    clientPhone = phone;
+    clientCity = city;
+    clientState = state;
+    notifyListeners();
+  }
 
-  // --- CÁLCULO TOTAL ---
+  // Customização
+  void setCustomizationText(String text) {
+    customizationText = text;
+    notifyListeners();
+  }
+
+  void setExtraLaborCost(double value) {
+    _extraLaborCost = value;
+    _calculateTotalPrice();
+    notifyListeners();
+  }
+
+  // --- CONFIGURAÇÕES ---
+  Future<void> fetchSettings() async {
+    await Future.delayed(Duration.zero); 
+  }
+
+  // --- CÁLCULOS ---
+
   void _calculateTotalPrice() {
     double total = 0.0;
-    total += _selectedBlank?.price ?? 0.0;
-    total += (_selectedCabo?.price ?? 0.0) * _caboQuantity;
-    total += _selectedReelSeat?.price ?? 0.0;
     
-    for (var item in _selectedPassadoresList) total += item.totalPrice;
-    for (var item in _selectedAcessoriosList) total += item.totalPrice;
-
-    // Só cobra se tiver texto
-    if (_gravacao.isNotEmpty) {
-      total += _customizationPrice;
+    double sumList(List<RodItem> list) {
+      return list.fold(0.0, (sum, item) => sum + (item.component.price * item.quantity));
     }
+
+    total += sumList(_selectedBlanks);
+    total += sumList(_selectedCabos);
+    total += sumList(_selectedReelSeats);
+    total += sumList(_selectedPassadores);
+    total += sumList(_selectedAcessorios);
     
+    total += _extraLaborCost; 
+
     _totalPrice = total;
   }
 
   void clearBuild() {
-    _selectedBlank = null; _selectedBlankVariation = null;
-    _selectedCabo = null; _selectedCaboVariation = null; _caboQuantity = 1;
-    _selectedReelSeat = null; _selectedReelSeatVariation = null;
-    
-    _selectedPassadoresList.clear();
-    _selectedAcessoriosList.clear();
-
-    _corLinha = '';
-    _gravacao = '';
-    _clientName = '';
-    _clientPhone = '';
-    _clientCity = '';
-    _clientState = '';
+    clientName = ''; clientPhone = ''; clientCity = ''; clientState = '';
+    _selectedBlanks.clear();
+    _selectedCabos.clear();
+    _selectedReelSeats.clear();
+    _selectedPassadores.clear();
+    _selectedAcessorios.clear();
+    customizationText = '';
+    _extraLaborCost = 0.0;
     _totalPrice = 0.0;
-    
     notifyListeners();
   }
+  
+  // --- CARREGAR KIT ---
+  Future<bool> loadKit(KitModel kit) async {
+      final FirebaseFirestore firestore = FirebaseFirestore.instance;
+      
+      Future<Component?> fetchComp(String id) async {
+        if (id.isEmpty) return null;
+        try {
+          final doc = await firestore.collection('components').doc(id).get();
+          if (doc.exists) return Component.fromFirestore(doc);
+        } catch (e) {
+          print("Erro carregando componente: $e");
+        }
+        return null;
+      }
 
-  Future<bool> saveQuote(String userId, {String status = 'rascunho'}) async {
-    _calculateTotalPrice();
+      Future<void> loadList(List<Map<String, dynamic>> source, List<RodItem> target) async {
+        target.clear();
+        for (var itemMap in source) {
+          final comp = await fetchComp(itemMap['id']);
+          if (comp != null) {
+            target.add(RodItem(
+              component: comp,
+              quantity: (itemMap['quantity'] ?? 1).toInt(),
+              variation: itemMap['variation'],
+            ));
+          }
+        }
+      }
 
-    // Helpers de conversão
-    List<Map<String, dynamic>> toMapList(List<RodItem> list) {
+      _selectedBlanks.clear();
+      _selectedCabos.clear();
+      _selectedReelSeats.clear();
+      _selectedPassadores.clear();
+      _selectedAcessorios.clear();
+
+      await loadList(kit.blanksIds, _selectedBlanks);
+      await loadList(kit.cabosIds, _selectedCabos);
+      await loadList(kit.reelSeatsIds, _selectedReelSeats);
+      await loadList(kit.passadoresIds, _selectedPassadores);
+      await loadList(kit.acessoriosIds, _selectedAcessorios);
+
+      _calculateTotalPrice();
+      notifyListeners();
+      return true;
+  }
+
+  // --- SALVAR ---
+  Future<bool> saveQuote(String userId, {required String status}) async {
+    List<Map<String, dynamic>> convertList(List<RodItem> list) {
       return list.map((item) => {
         'name': item.component.name,
-        'price': item.component.price,
-        'cost': item.component.costPrice,
-        'quantity': item.quantity,
         'variation': item.variation,
+        'quantity': item.quantity,
+        'cost': item.component.costPrice,
+        'price': item.component.price,
       }).toList();
     }
 
@@ -306,27 +255,90 @@ class RodBuilderProvider with ChangeNotifier {
       userId: userId,
       status: status,
       createdAt: Timestamp.now(),
+      clientName: clientName,
+      clientPhone: clientPhone,
+      clientCity: clientCity,
+      clientState: clientState,
+      blanksList: convertList(_selectedBlanks),
+      cabosList: convertList(_selectedCabos),
+      reelSeatsList: convertList(_selectedReelSeats),
+      passadoresList: convertList(_selectedPassadores),
+      acessoriosList: convertList(_selectedAcessorios),
+      extraLaborCost: _extraLaborCost,
       totalPrice: _totalPrice,
-      
-      clientName: _clientName, clientPhone: _clientPhone, clientCity: _clientCity, clientState: _clientState,
-      
-      blankName: _selectedBlank?.name, blankPrice: _selectedBlank?.price, blankCost: _selectedBlank?.costPrice, blankVariation: _selectedBlankVariation,
-      caboName: _selectedCabo?.name, caboPrice: _selectedCabo?.price, caboCost: _selectedCabo?.costPrice, caboQuantity: _caboQuantity, caboVariation: _selectedCaboVariation,
-      reelSeatName: _selectedReelSeat?.name, reelSeatPrice: _selectedReelSeat?.price, reelSeatCost: _selectedReelSeat?.costPrice, reelSeatVariation: _selectedReelSeatVariation,
-      
-      passadoresList: toMapList(_selectedPassadoresList),
-      acessoriosList: toMapList(_selectedAcessoriosList),
-      
-      corLinha: _corLinha,
-      gravacao: _gravacao,
+      customizationText: customizationText,
     );
 
     try {
       await _quoteService.saveQuote(quote);
       return true;
     } catch (e) {
-      print("Erro ao salvar: $e");
+      print("Erro ao salvar quote: $e");
       return false;
     }
   }
+
+  // --- CARREGAR ORÇAMENTO EXISTENTE PARA EDIÇÃO ---
+  Future<void> loadFromQuote(Quote quote) async {
+    // 1. Carregar dados do cliente
+    clientName = quote.clientName;
+    clientPhone = quote.clientPhone;
+    clientCity = quote.clientCity;
+    clientState = quote.clientState;
+    customizationText = quote.customizationText ?? '';
+    _extraLaborCost = quote.extraLaborCost;
+
+    final FirebaseFirestore firestore = FirebaseFirestore.instance;
+
+    Future<Component?> findComponentByName(String name) async {
+       final snapshot = await firestore.collection('components')
+           .where('name', isEqualTo: name)
+           .limit(1)
+           .get();
+       
+       if (snapshot.docs.isNotEmpty) {
+         return Component.fromFirestore(snapshot.docs.first);
+       }
+       return null;
+    }
+
+    Future<void> fillList(List<Map<String, dynamic>> source, List<RodItem> target) async {
+      target.clear();
+      for (var item in source) {
+        String name = item['name'];
+        Component? comp = await findComponentByName(name);
+        
+        // CORREÇÃO: Passando todos os parâmetros obrigatórios
+        comp ??= Component(
+            id: '', 
+            name: name, 
+            description: '', // Descrição vazia
+            category: '', 
+            price: (item['price'] ?? 0).toDouble(), 
+            costPrice: (item['cost'] ?? 0).toDouble(), 
+            stock: 0, 
+            imageUrl: '', 
+            variations: {},
+            attributes: {}, // ADICIONADO: Mapa de atributos vazio
+          );
+
+        target.add(RodItem(
+          component: comp,
+          quantity: (item['quantity'] ?? 1).toInt(),
+          variation: item['variation'],
+        ));
+      }
+    }
+
+    await fillList(quote.blanksList, _selectedBlanks);
+    await fillList(quote.cabosList, _selectedCabos);
+    await fillList(quote.reelSeatsList, _selectedReelSeats);
+    await fillList(quote.passadoresList, _selectedPassadores);
+    await fillList(quote.acessoriosList, _selectedAcessorios);
+
+    _calculateTotalPrice();
+    notifyListeners();
+  }
 }
+
+//aa
