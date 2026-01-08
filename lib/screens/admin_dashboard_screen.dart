@@ -35,7 +35,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FA),
+      backgroundColor: Colors.grey[50], // Fundo padrão suave
       body: StreamBuilder<List<Quote>>(
         stream: _quoteService.getAllQuotesStream(),
         builder: (context, snapshot) {
@@ -43,18 +43,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError) {
-            return Center(child: Text('Erro: ${snapshot.error}'));
+            return Center(child: Text('Erro ao carregar dados.', style: TextStyle(color: Colors.red[800])));
           }
           
           final allQuotes = snapshot.data ?? [];
-          
           final mainData = _calculatePeriodData(allQuotes, _selectedMonth, _selectedYear);
-          
           DashboardData? compareData;
           if (_isComparing) {
             compareData = _calculatePeriodData(allQuotes, _compareMonth, _compareYear);
           }
-
           final chartData = _calculateYearlyData(allQuotes, _selectedYear);
 
           return SingleChildScrollView(
@@ -65,11 +62,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 _buildFiltersCard(),
                 const SizedBox(height: 24),
 
-                const Text(
-                  "Resultados do Período",
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blueGrey),
-                ),
-                const SizedBox(height: 16),
+                _buildSectionTitle("Resultados Financeiros"),
+                const SizedBox(height: 12),
                 
                 Row(
                   children: [
@@ -101,29 +95,23 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      "Evolução ($_selectedYear)",
-                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blueGrey),
-                    ),
+                    _buildSectionTitle("Evolução Anual ($_selectedYear)"),
                     Row(
                       children: [
                         Container(width: 12, height: 12, decoration: BoxDecoration(color: Colors.blueGrey[800], borderRadius: BorderRadius.circular(2))),
                         const SizedBox(width: 4),
-                        const Text("Atual", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                        const Text("Vendas", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                       ],
                     )
                   ],
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
                 _buildScrollableBarChart(chartData),
 
                 const SizedBox(height: 32),
 
-                Text(
-                  "Top Itens (${_getMonthName(_selectedMonth)})",
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blueGrey),
-                ),
-                const SizedBox(height: 16),
+                _buildSectionTitle("Top Itens (${_getMonthName(_selectedMonth)})"),
+                const SizedBox(height: 12),
                 _buildTopProductsList(mainData.topComponents),
                 
                 const SizedBox(height: 40),
@@ -135,22 +123,28 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  // --- WIDGETS DE FILTRO ---
+  Widget _buildSectionTitle(String title) {
+    return Text(
+      title.toUpperCase(), 
+      style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.blueGrey[800], letterSpacing: 0.5)
+    );
+  }
+
+  // --- WIDGETS ---
 
   Widget _buildFiltersCard() {
     return Card(
-      elevation: 0,
-      color: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.blueGrey[100]!)),
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
             Row(
               children: [
-                const Icon(Icons.calendar_month, color: Colors.blueGrey),
+                Icon(Icons.calendar_month, color: Colors.blueGrey[700]),
                 const SizedBox(width: 12),
-                const Text("Período:", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                Text("Período:", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.blueGrey[900])),
                 const SizedBox(width: 12),
                 _buildMonthDropdown(_selectedMonth, (v) => setState(() => _selectedMonth = v!)),
                 const SizedBox(width: 8),
@@ -192,7 +186,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     return DropdownButton<int>(
       value: value,
       isDense: true,
-      underline: Container(height: 1, color: Colors.blueGrey),
+      underline: Container(height: 1, color: Colors.blueGrey[300]),
       style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.w600, fontSize: 14),
       items: List.generate(12, (index) => DropdownMenuItem(
         value: index + 1,
@@ -207,7 +201,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     return DropdownButton<int>(
       value: value,
       isDense: true,
-      underline: Container(height: 1, color: Colors.blueGrey),
+      underline: Container(height: 1, color: Colors.blueGrey[300]),
       style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.w600, fontSize: 14),
       items: List.generate(5, (index) => DropdownMenuItem(
         value: currentYear - index,
@@ -216,8 +210,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       onChanged: onChanged,
     );
   }
-
-  // --- WIDGETS DE DADOS ---
 
   Widget _buildKpiCard({
     required String title, 
@@ -236,8 +228,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))],
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 4, offset: const Offset(0, 2))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -246,7 +238,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             children: [
               Icon(icon, color: color, size: 20),
               const SizedBox(width: 8),
-              Expanded(child: Text(title, style: TextStyle(color: Colors.blueGrey[700], fontWeight: FontWeight.bold, fontSize: 13), overflow: TextOverflow.ellipsis)),
+              Expanded(child: Text(title, style: TextStyle(color: Colors.blueGrey[700], fontWeight: FontWeight.bold, fontSize: 12), overflow: TextOverflow.ellipsis)),
             ],
           ),
           const SizedBox(height: 12),
@@ -296,12 +288,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     if (maxVal == 0) maxVal = 1;
 
     return Container(
-      height: 240, 
+      height: 220, 
       padding: const EdgeInsets.symmetric(vertical: 20),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)],
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 4)],
       ),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
@@ -324,27 +316,27 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     Text(
                       stat.total > 1000 ? '${(stat.total/1000).toStringAsFixed(1)}k' : stat.total.toStringAsFixed(0),
                       style: TextStyle(
-                        fontSize: 11, 
+                        fontSize: 10, 
                         fontWeight: FontWeight.bold, 
-                        color: isSelected ? Colors.black87 : Colors.blueGrey[600]
+                        color: isSelected ? Colors.black87 : Colors.blueGrey[400]
                       ),
                     ),
                   const SizedBox(height: 6),
                   Container(
-                    height: 140 * percentage, 
-                    width: 32,
+                    height: 120 * percentage, 
+                    width: 24,
                     decoration: BoxDecoration(
                       color: barColor,
-                      borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
                     ),
                   ),
                   const SizedBox(height: 8),
                   Text(
                     stat.monthName.substring(0, 3).toUpperCase(),
                     style: TextStyle(
-                      fontSize: 12, 
+                      fontSize: 11, 
                       fontWeight: FontWeight.bold,
-                      color: isSelected ? Colors.blueGrey[900] : Colors.grey[600]
+                      color: isSelected ? Colors.blueGrey[900] : Colors.grey[500]
                     ),
                   ),
                 ],
@@ -365,12 +357,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       );
     }
 
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)],
-      ),
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       child: Column(
         children: items.asMap().entries.map((entry) {
           int index = entry.key;
@@ -380,31 +369,27 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           return Column(
             children: [
               ListTile(
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
                 leading: CircleAvatar(
-                  radius: 16,
-                  backgroundColor: index == 0 ? Colors.amber[100] : (index == 1 ? Colors.grey[200] : Colors.orange[50]),
+                  radius: 14,
+                  backgroundColor: index < 3 ? Colors.amber[100 + (index * 100)] : Colors.grey[200],
                   child: Text(
                     "${index+1}", 
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.blueGrey[900])
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blueGrey[900])
                   ),
                 ),
                 title: Text(
                   name, 
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.black87),
-                  maxLines: 2,
+                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: Colors.black87),
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                trailing: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(color: Colors.blueGrey[50], borderRadius: BorderRadius.circular(12)),
-                  child: Text(
-                    "$qty un", 
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.blueGrey[900])
-                  ),
+                trailing: Text(
+                  "$qty un", 
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.blueGrey[800])
                 ),
               ),
-              if (index < items.length - 1) const Divider(height: 1, indent: 70, endIndent: 16),
+              if (index < items.length - 1) const Divider(height: 1, indent: 56, endIndent: 16),
             ],
           );
         }).toList(),
@@ -412,7 +397,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  // --- LÓGICA DE CÁLCULO (CORRIGIDA) ---
+  // --- LÓGICA DE CÁLCULO ---
 
   DashboardData _calculatePeriodData(List<Quote> allQuotes, int month, int year) {
     double revenue = 0;
@@ -427,22 +412,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
     for (var quote in periodQuotes) {
       revenue += quote.totalPrice;
-      
       double cost = 0;
       
-      // Helper para processar listas
       void processList(List<Map<String, dynamic>> items) {
         for (var item in items) {
           double itemCost = (item['cost'] ?? 0.0).toDouble();
-          
-          // CORREÇÃO AQUI: Cast seguro para num, depois para int
           int qty = ((item['quantity'] ?? 1) as num).toInt();
-          
           cost += itemCost * qty;
-          
           String name = item['name'] ?? '';
           if (name.isNotEmpty) {
-            // CORREÇÃO AQUI: Cast seguro para somar no mapa
             components[name] = (components[name] ?? 0) + qty;
           }
         }
@@ -458,27 +436,19 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     }
 
     var sortedComponents = components.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
-    
-    return DashboardData(
-      revenue: revenue,
-      profit: profit,
-      topComponents: sortedComponents.take(5).toList(),
-    );
+    return DashboardData(revenue: revenue, profit: profit, topComponents: sortedComponents.take(5).toList());
   }
 
   List<MonthlyStat> _calculateYearlyData(List<Quote> allQuotes, int year) {
     Map<int, double> monthsMap = {};
     for (int i = 1; i <= 12; i++) monthsMap[i] = 0.0;
-
     final yearQuotes = allQuotes.where((q) {
       return _activeStatuses.contains(q.status.toLowerCase()) && q.createdAt.toDate().year == year;
     });
-
     for (var q in yearQuotes) {
       int m = q.createdAt.toDate().month;
       monthsMap[m] = (monthsMap[m] ?? 0) + q.totalPrice;
     }
-
     List<MonthlyStat> result = [];
     monthsMap.forEach((k, v) {
       result.add(MonthlyStat(monthInt: k, monthName: _getMonthName(k), total: v));
@@ -487,17 +457,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     return result;
   }
 
-  String _getMonthName(int month) {
-    const months = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
-    return months[month - 1];
-  }
+  String _getMonthName(int month) => ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'][month - 1];
 }
 
 class DashboardData {
   final double revenue;
   final double profit;
   final List<MapEntry<String, int>> topComponents;
-
   DashboardData({required this.revenue, required this.profit, required this.topComponents});
 }
 
@@ -505,6 +471,5 @@ class MonthlyStat {
   final int monthInt;
   final String monthName;
   final double total;
-
   MonthlyStat({required this.monthInt, required this.monthName, required this.total});
 }

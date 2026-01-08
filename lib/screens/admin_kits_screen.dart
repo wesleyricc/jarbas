@@ -49,11 +49,11 @@ class AdminKitsScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Gerenciar Kits Prontos')),
-      floatingActionButton: FloatingActionButton.extended(
-        label: const Text('Novo Kit'),
-        icon: const Icon(Icons.add),
+      floatingActionButton: FloatingActionButton(
+        //label: const Text('Novo Kit'),
         backgroundColor: Colors.blueGrey[800],
-        foregroundColor: Colors.white,
+        child: const Icon(Icons.add, color: Colors.white),
+        //foregroundColor: Colors.white,
         onPressed: () {
           Navigator.push(context, MaterialPageRoute(builder: (context) => const KitFormScreen()));
         },

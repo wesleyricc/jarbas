@@ -11,8 +11,8 @@ import '../widgets/multi_component_step.dart';
 import '../widgets/customization_step.dart';
 import '../widgets/price_summary_bar.dart';
 import '../widgets/summary_step.dart';
-import '../widgets/passadores_step.dart'; // Se estiver usando o wrapper
-import '../widgets/acessorios_step.dart'; // Se estiver usando o wrapper
+import '../widgets/passadores_step.dart'; 
+import '../widgets/acessorios_step.dart'; 
 
 class RodBuilderScreen extends StatefulWidget {
   const RodBuilderScreen({super.key});
@@ -22,7 +22,6 @@ class RodBuilderScreen extends StatefulWidget {
 }
 
 class _RodBuilderScreenState extends State<RodBuilderScreen> {
-  // Passos: 0:Client, 1:Modo, 2:Blank(s), 3:Cabo(s), 4:Reel(s), 5:Passadores, 6:Acessórios, 7:Custom, 8:Resumo
   int _currentStep = 0;
   bool _isLoading = false;
   final int _totalSteps = 9;
@@ -104,15 +103,12 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
     }
   }
 
-  // --- CARREGAMENTO DO KIT ---
-
   Future<void> _selectKitAndProceed(KitModel kit, RodBuilderProvider provider) async {
     setState(() => _isLoading = true);
     final success = await provider.loadKit(kit);
     setState(() => _isLoading = false);
 
     if (success) {
-      // Pula para o Blank (Passo 2) já preenchido
       setState(() => _currentStep = 2);
     } else {
       _showError('Erro ao carregar kit.');
@@ -122,8 +118,6 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
   void _showError(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: Colors.red));
   }
-
-  // --- NAVEGAÇÃO ---
 
   void _nextStep() {
     if (_currentStep < _totalSteps - 1) {
@@ -165,6 +159,7 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
                   child: _buildStepContent(_currentStep, isAdmin, provider),
                 ),
               ),
+              // PREÇO TOTAL: Só mostra se for ADMIN
               if (isAdmin) PriceSummaryBar(totalPrice: provider.totalPrice),
               _buildBottomNavigation(isAdmin, provider),
             ],
@@ -246,7 +241,7 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
   Widget _getStepWidget(int step, bool isAdmin, RodBuilderProvider provider) {
     switch (step) {
       case 0: return const ClientInfoStep();
-      case 1: return _buildModeSelectionStep(provider);
+      case 1: return _buildModeSelectionStep(provider, isAdmin); // Passando isAdmin
 
       case 2: return MultiComponentStep(
           isAdmin: isAdmin,
@@ -293,7 +288,7 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
           isAdmin: isAdmin, categoryKey: 'acessorios', title: 'Acessório', emptyMessage: 'Nenhum acessório selecionado.', emptyIcon: Icons.extension_outlined,
           items: provider.selectedAcessoriosList, onAdd: (c, v) => provider.addAcessorio(c, 1, variation: v),
           onRemove: (i) => provider.removeAcessorio(i), onUpdateQty: (i, q) => provider.updateAcessorioQty(i, q));
-                
+      
       case 7: return CustomizationStep(isAdmin: isAdmin);
       case 8: return SummaryStep(isAdmin: isAdmin);
       default: return const SizedBox.shrink();
@@ -302,7 +297,7 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
 
   // --- PASSO 1: SELEÇÃO DE MODO E DETALHES DO KIT ---
 
-  Widget _buildModeSelectionStep(RodBuilderProvider provider) {
+  Widget _buildModeSelectionStep(RodBuilderProvider provider, bool isAdmin) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -343,7 +338,7 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
                 itemCount: snapshot.data!.length,
                 itemBuilder: (context, index) {
                   final kit = snapshot.data![index];
-                  return _buildKitCard(kit, provider);
+                  return _buildKitCard(kit, provider, isAdmin); // Passando isAdmin
                 },
               );
             },
@@ -380,7 +375,7 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
     );
   }
 
-  Widget _buildKitCard(KitModel kit, RodBuilderProvider provider) {
+  Widget _buildKitCard(KitModel kit, RodBuilderProvider provider, bool isAdmin) {
     return Container(
       width: 220,
       margin: const EdgeInsets.only(right: 16, bottom: 8),
@@ -389,13 +384,14 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
-          onTap: () => _showKitDetails(context, kit, provider),
+          onTap: () => _showKitDetails(context, kit, provider, isAdmin),
           child: FutureBuilder<Map<String, dynamic>>(
             future: _kitService.getKitSummary(kit),
             builder: (context, snapshot) {
-              String priceText = '...';
+              String priceText = '';
               
-              if (snapshot.hasData) {
+              // Só mostra preço se for admin
+              if (isAdmin && snapshot.hasData) {
                 priceText = 'R\$ ${(snapshot.data!['totalPrice'] as double).toStringAsFixed(2)}';
               }
 
@@ -410,20 +406,20 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
                         ClipRRect(
                           borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
                           child: kit.imageUrls.isNotEmpty
-                              // REMOVIDA LÓGICA DE INDISPONÍVEL/GRAYSCALE
                               ? Image.network(kit.imageUrls.first, fit: BoxFit.cover)
                               : Container(color: Colors.grey[200], child: const Icon(Icons.image_not_supported)),
                         ),
                         
-                        // Preço sempre visível
-                        Positioned(
-                          top: 8, right: 8,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(8)),
-                            child: Text(priceText, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                        // Etiqueta de Preço (APENAS PARA ADMIN)
+                        if (isAdmin && priceText.isNotEmpty)
+                          Positioned(
+                            top: 8, right: 8,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(8)),
+                              child: Text(priceText, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                            ),
                           ),
-                        ),
                       ],
                     ),
                   ),
@@ -442,7 +438,7 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
                             alignment: Alignment.center,
                             padding: const EdgeInsets.symmetric(vertical: 8),
                             decoration: BoxDecoration(color: Colors.blueGrey[50], borderRadius: BorderRadius.circular(8)),
-                            child: Text("VER DETALHES", style: TextStyle(color: Colors.blueGrey[800], fontWeight: FontWeight.bold, fontSize: 12)),
+                            child: Text("USAR ESTE MODELO", style: TextStyle(color: Colors.blueGrey[800], fontWeight: FontWeight.bold, fontSize: 12)),
                           )
                         ],
                       ),
@@ -482,7 +478,7 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
     };
   }
 
-  void _showKitDetails(BuildContext context, KitModel kit, RodBuilderProvider provider) {
+  void _showKitDetails(BuildContext context, KitModel kit, RodBuilderProvider provider, bool isAdmin) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/rod_builder_provider.dart';
-import '../models/component_model.dart';
 
 class SummaryStep extends StatelessWidget {
   final bool isAdmin;
@@ -10,325 +9,217 @@ class SummaryStep extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<RodBuilderProvider>();
-
-    // --- CÁLCULOS GERAIS PARA O ADMIN ---
-    double totalCostPrice = 0.0;
-    if (isAdmin) {
-      double sumCost(List<RodItem> list) {
-        return list.fold(0.0, (sum, item) => sum + (item.component.costPrice * item.quantity));
-      }
-      totalCostPrice += sumCost(provider.selectedBlanksList);
-      totalCostPrice += sumCost(provider.selectedCabosList);
-      totalCostPrice += sumCost(provider.selectedReelSeatsList);
-      totalCostPrice += sumCost(provider.selectedPassadoresList);
-      totalCostPrice += sumCost(provider.selectedAcessoriosList);
-    }
-
-    double estimatedProfit = provider.totalPrice - totalCostPrice;
-    double marginPercent = provider.totalPrice > 0 
-        ? (estimatedProfit / provider.totalPrice) * 100 
-        : 0.0;
-    // ------------------------------------
-
+    
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Text('Resumo da Montagem', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black87)),
+        // 1. DADOS DO CLIENTE (Visível para TODOS)
+        _buildClientInfoCard(provider),
         const SizedBox(height: 24),
 
-        // --- DADOS CLIENTE ---
-        _buildSectionTitle('Dados do Cliente'),
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.white, 
-            borderRadius: BorderRadius.circular(8), 
-            border: Border.all(color: Colors.grey[300]!)
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('${provider.clientName} - ${provider.clientPhone}', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87)),
-              const SizedBox(height: 4),
-              Text('${provider.clientCity}/${provider.clientState}', style: TextStyle(color: Colors.grey[800])),
-            ],
-          ),
+        // 2. COMPONENTES SELECIONADOS
+        const Text(
+          "Itens do Projeto",
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blueGrey),
         ),
-        const Divider(height: 32),
+        const SizedBox(height: 12),
 
-        // --- LISTAGEM DE ITENS ---
-        _buildSectionTitle(isAdmin ? 'Análise Detalhada (Custos e Vendas)' : 'Lista de Componentes'),
-        
+        // Se for ADMIN mostra detalhado (com valores), se for CLIENTE mostra simples
         if (isAdmin) ...[
-          // ADMIN: TABELA SUPER DETALHADA
-          Container(
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey[300]!),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Column(
-              children: [
-                _buildDetailedFinancialGroup('Blanks', provider.selectedBlanksList),
-                _buildDetailedFinancialGroup('Cabos', provider.selectedCabosList),
-                _buildDetailedFinancialGroup('Reel Seats', provider.selectedReelSeatsList),
-                _buildDetailedFinancialGroup('Passadores', provider.selectedPassadoresList),
-                _buildDetailedFinancialGroup('Acessórios', provider.selectedAcessoriosList),
-              ],
-            ),
-          )
+          _buildAdminComponentList(provider),
+          const SizedBox(height: 24),
+          _buildAdminFinancialTotals(provider),
         ] else ...[
-          // CLIENTE: LISTA SIMPLES
-          _buildListSummary('Blanks', provider.selectedBlanksList),
-          _buildListSummary('Cabos', provider.selectedCabosList),
-          _buildListSummary('Reel Seats', provider.selectedReelSeatsList),
-          _buildListSummary('Passadores', provider.selectedPassadoresList),
-          _buildListSummary('Acessórios', provider.selectedAcessoriosList),
+          _buildClientComponentList(provider),
         ],
-
-        const Divider(height: 32),
-        
-        // --- PERSONALIZAÇÃO ---
-        _buildSectionTitle('Personalização'),
-        Text(
-          provider.customizationText.isEmpty ? 'Nenhuma observação.' : provider.customizationText,
-          style: const TextStyle(fontStyle: FontStyle.italic, color: Colors.black87),
-        ),
-
-        const Divider(height: 32),
-
-        // ============================================================
-        //              RESUMO FINANCEIRO TOTAL (ADMIN)
-        // ============================================================
-        if (isAdmin) ...[
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white, // Fundo Branco limpo
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.blueGrey[200]!),
-              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))]
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Icon(Icons.assessment_outlined, size: 20, color: Colors.blueGrey[800]),
-                    const SizedBox(width: 8),
-                    Text("BALANÇO FINANCEIRO (ADMIN)", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey[800], fontSize: 14)),
-                  ],
-                ),
-                const Divider(height: 24),
-                
-                // Linhas de totais
-                _buildSummaryRow("Receita Bruta:", provider.totalPrice, isBold: false),
-                _buildSummaryRow("Custo Total Peças:", totalCostPrice, isNegative: true),
-                if(provider.extraLaborCost > 0)
-                  _buildSummaryRow("Mão de Obra (Extra):", provider.extraLaborCost, isBold: true),
-                
-                const SizedBox(height: 16),
-                
-                // Card de Lucro Destacado
-                Container(
-                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-                  decoration: BoxDecoration(
-                    color: Colors.green[50], 
-                    borderRadius: BorderRadius.circular(8), 
-                    border: Border.all(color: Colors.green[300]!)
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text("LUCRO LÍQUIDO", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green, fontSize: 12)),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Text("R\$ ${estimatedProfit.toStringAsFixed(2)}", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.green[900])),
-                          Text("Margem: ${marginPercent.toStringAsFixed(1)}%", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.green[800])),
-                        ],
-                      )
-                    ],
-                  ),
-                )
-              ],
-            ),
-          ),
-          const SizedBox(height: 32),
-        ],
-        // ============================================================
-
-        // --- RODAPÉ VISUAL PADRÃO (CLIENTE/ADMIN) ---
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const Text('Peças:', style: TextStyle(color: Colors.grey)),
-            Text('R\$ ${(provider.totalPrice - provider.extraLaborCost).toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold)),
-          ],
-        ),
-        if (provider.extraLaborCost > 0)
-          Padding(
-            padding: const EdgeInsets.only(top: 8.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('Mão de Obra / Extras:', style: TextStyle(color: Colors.grey)),
-                Text('R\$ ${provider.extraLaborCost.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold)),
-              ],
-            ),
-          ),
-          
-        const SizedBox(height: 16),
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.blueGrey[900],
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text('TOTAL DO PEDIDO', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
-              Text('R\$ ${provider.totalPrice.toStringAsFixed(2)}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white)),
-            ],
-          ),
-        ),
       ],
     );
   }
 
-  // --- WIDGETS AUXILIARES ---
-
-  Widget _buildSectionTitle(String title) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8.0),
-      child: Text(
-        title.toUpperCase(), 
-        style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.blueGrey[700], letterSpacing: 0.5)
+  // --- 1. DADOS DO CLIENTE (COMUM) ---
+  Widget _buildClientInfoCard(RodBuilderProvider provider) {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.person, color: Colors.blueGrey[700]),
+                const SizedBox(width: 8),
+                const Text("DADOS DO CLIENTE", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+              ],
+            ),
+            const Divider(),
+            _buildInfoRow("Nome:", provider.clientName),
+            _buildInfoRow("Telefone:", provider.clientPhone),
+            _buildInfoRow("Local:", "${provider.clientCity} - ${provider.clientState}"),
+            if (provider.customizationText.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 8.0),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(color: Colors.amber[50], borderRadius: BorderRadius.circular(4)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text("PERSONALIZAÇÃO (GRAVAÇÃO)", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.amber[900])),
+                      Text(provider.customizationText, style: const TextStyle(fontStyle: FontStyle.italic)),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
 
-  // --- LISTA SIMPLES (CLIENTE) ---
-  Widget _buildListSummary(String title, List<RodItem> items) {
-    if (items.isEmpty) return const SizedBox.shrink();
+  Widget _buildInfoRow(String label, String value) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12.0),
-      child: Column(
+      padding: const EdgeInsets.only(bottom: 4.0),
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-          ...items.map((item) => Padding(
-            padding: const EdgeInsets.only(left: 8.0, top: 2.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(child: Text("${item.quantity}x ${item.component.name}${item.variation != null ? ' (${item.variation})' : ''}", style: const TextStyle(fontSize: 13))),
-                Text("R\$ ${(item.component.price * item.quantity).toStringAsFixed(2)}", style: const TextStyle(fontSize: 13, color: Colors.grey)),
-              ],
-            ),
-          )),
+          SizedBox(width: 70, child: Text(label, style: TextStyle(color: Colors.grey[600], fontSize: 13))),
+          Expanded(child: Text(value, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14))),
         ],
       ),
     );
   }
 
-  // --- TABELA DETALHADA FINANCEIRA (ADMIN) ---
-  Widget _buildDetailedFinancialGroup(String categoryName, List<RodItem> items) {
+  // --- 2. LISTA SIMPLES (CLIENTE) ---
+  Widget _buildClientComponentList(RodBuilderProvider provider) {
+    return Column(
+      children: [
+        _buildSimpleGroup("Blanks", provider.selectedBlanksList),
+        _buildSimpleGroup("Cabos", provider.selectedCabosList),
+        _buildSimpleGroup("Reel Seats", provider.selectedReelSeatsList),
+        _buildSimpleGroup("Passadores", provider.selectedPassadoresList),
+        _buildSimpleGroup("Acessórios", provider.selectedAcessoriosList),
+      ],
+    );
+  }
+
+  Widget _buildSimpleGroup(String title, List<RodItem> items) {
+    if (items.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+          decoration: BoxDecoration(color: Colors.grey[200], borderRadius: BorderRadius.circular(4)),
+          child: Text(title.toUpperCase(), style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey[700])),
+        ),
+        ...items.map((item) {
+          String variation = item.variation != null ? " - ${item.variation}" : "";
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+            child: Row(
+              children: [
+                Text("${item.quantity}x", style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey)),
+                const SizedBox(width: 12),
+                Expanded(child: Text("${item.component.name}$variation")),
+              ],
+            ),
+          );
+        }),
+        const SizedBox(height: 8),
+      ],
+    );
+  }
+
+  // --- 3. LISTA DETALHADA E FINANCEIRO (ADMIN) ---
+  Widget _buildAdminComponentList(RodBuilderProvider provider) {
+    return Column(
+      children: [
+        _buildDetailedGroup("Blanks", provider.selectedBlanksList),
+        _buildDetailedGroup("Cabos", provider.selectedCabosList),
+        _buildDetailedGroup("Reel Seats", provider.selectedReelSeatsList),
+        _buildDetailedGroup("Passadores", provider.selectedPassadoresList),
+        _buildDetailedGroup("Acessórios", provider.selectedAcessoriosList),
+      ],
+    );
+  }
+
+  Widget _buildDetailedGroup(String categoryName, List<RodItem> items) {
     if (items.isEmpty) return const SizedBox.shrink();
 
     return Column(
       children: [
-        // Cabeçalho da Categoria
         Container(
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          color: Colors.grey[200],
-          child: Text(categoryName.toUpperCase(), style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey[800])),
+          color: Colors.blueGrey[100],
+          child: Text(categoryName.toUpperCase(), style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blueGrey[900])),
         ),
-        
-        // Itens
         ...items.map((item) {
-          // Cálculos
-          double unitCost = item.component.costPrice;
-          double totalCost = unitCost * item.quantity;
-          
-          double unitSale = item.component.price;
-          double totalSale = unitSale * item.quantity;
-          
+          double totalCost = item.component.costPrice * item.quantity;
+          double totalSale = item.component.price * item.quantity;
           double profit = totalSale - totalCost;
           double margin = totalSale > 0 ? (profit / totalSale) * 100 : 0.0;
-          
           String variation = item.variation != null ? " [${item.variation}]" : "";
 
           return Container(
             color: Colors.white,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            margin: const EdgeInsets.only(bottom: 1), // Separador visual
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Nome e Quantidade
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Expanded(
-                      child: Text(
-                        "${item.quantity}x ${item.component.name}$variation",
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.black87),
-                      ),
+                    Container(
+                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                       decoration: BoxDecoration(color: Colors.blueGrey[50], borderRadius: BorderRadius.circular(4)),
+                       child: Text("${item.quantity}x", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12))
                     ),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text("${item.component.name}$variation", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.black87))),
                   ],
                 ),
                 const SizedBox(height: 8),
-                
-                // LINHA DE DADOS (3 COLUNAS)
                 Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // --- COLUNA 1: CUSTOS (Vermelho/Cinza) ---
+                    // Coluna Custo
                     Expanded(
-                      flex: 3,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text("CUSTO", style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.grey)),
-                          const SizedBox(height: 2),
-                          Text("Un: R\$ ${unitCost.toStringAsFixed(2)}", style: const TextStyle(fontSize: 11, color: Colors.black54)),
+                          Text("Un: R\$ ${item.component.costPrice.toStringAsFixed(2)}", style: const TextStyle(fontSize: 10, color: Colors.black54)),
                           Text("Tot: R\$ ${totalCost.toStringAsFixed(2)}", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.red[800])),
                         ],
                       ),
                     ),
-                    
-                    // Separador Vertical Sutil
                     Container(width: 1, height: 24, color: Colors.grey[300]),
                     const SizedBox(width: 8),
-
-                    // --- COLUNA 2: VENDAS (Azul/Preto) ---
+                    // Coluna Venda
                     Expanded(
-                      flex: 3,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text("VENDA", style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.grey)),
-                          const SizedBox(height: 2),
-                          Text("Un: R\$ ${unitSale.toStringAsFixed(2)}", style: const TextStyle(fontSize: 11, color: Colors.black54)),
-                          Text("Tot: R\$ ${totalSale.toStringAsFixed(2)}", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blueGrey[800])),
+                          Text("Un: R\$ ${item.component.price.toStringAsFixed(2)}", style: const TextStyle(fontSize: 10, color: Colors.black54)),
+                          Text("Tot: R\$ ${totalSale.toStringAsFixed(2)}", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blue[800])),
                         ],
                       ),
                     ),
-
-                    // --- COLUNA 3: RESULTADO (Verde) ---
-                    Expanded(
-                      flex: 3,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                        decoration: BoxDecoration(color: Colors.green[50], borderRadius: BorderRadius.circular(6)),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Text("Mg: ${margin.toStringAsFixed(1)}%", style: TextStyle(fontSize: 10, color: Colors.green[800])),
-                            Text("R\$ ${profit.toStringAsFixed(2)}", style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Colors.green[900])),
-                          ],
-                        ),
+                    // Coluna Lucro
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(color: Colors.green[50], borderRadius: BorderRadius.circular(6)),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text("Mg: ${margin.toStringAsFixed(0)}%", style: TextStyle(fontSize: 9, color: Colors.green[800])),
+                          Text("R\$ ${profit.toStringAsFixed(2)}", style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Colors.green[900])),
+                        ],
                       ),
                     ),
                   ],
@@ -337,8 +228,75 @@ class SummaryStep extends StatelessWidget {
             ),
           );
         }),
-        const Divider(height: 1, color: Colors.grey),
       ],
+    );
+  }
+
+  Widget _buildAdminFinancialTotals(RodBuilderProvider provider) {
+    // Recalcula custos totais para o resumo
+    double sumCost(List<RodItem> list) => list.fold(0.0, (sum, item) => sum + (item.component.costPrice * item.quantity));
+    
+    double totalPartsCost = 0.0;
+    totalPartsCost += sumCost(provider.selectedBlanksList);
+    totalPartsCost += sumCost(provider.selectedCabosList);
+    totalPartsCost += sumCost(provider.selectedReelSeatsList);
+    totalPartsCost += sumCost(provider.selectedPassadoresList);
+    totalPartsCost += sumCost(provider.selectedAcessoriosList);
+
+    double totalRevenue = provider.totalPrice; // Já inclui mão de obra se houver
+    double totalCost = totalPartsCost; // Mão de obra geralmente é lucro puro ou tem custo hora (aqui tratamos extraLaborCost como receita adicionada)
+    
+    // Se quiser deduzir um custo da mão de obra, precisaria de outro campo. 
+    // Assumindo que o extraLaborCost é Valor Cobrado e entra 100% no lucro bruto do serviço, 
+    // mas não tem "custo de peça".
+    
+    double grossProfit = totalRevenue - totalCost;
+    double marginPercent = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0.0;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white, 
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.blueGrey[200]!),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))]
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.monetization_on, size: 24, color: Colors.blueGrey[800]),
+              const SizedBox(width: 8),
+              Text("RESUMO FINANCEIRO", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey[800], fontSize: 16)),
+            ],
+          ),
+          const Divider(height: 24),
+          
+          _buildSummaryRow("Receita Bruta (Venda):", totalRevenue, isBold: false),
+          _buildSummaryRow("Custo Peças:", totalPartsCost, isNegative: true),
+          if(provider.extraLaborCost > 0)
+            _buildSummaryRow("Mão de Obra (Adicional):", provider.extraLaborCost, isBold: true),
+          
+          const SizedBox(height: 16),
+          const Divider(thickness: 1, height: 1),
+          const SizedBox(height: 16),
+          
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text("LUCRO LÍQUIDO", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green, fontSize: 16)),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text("R\$ ${grossProfit.toStringAsFixed(2)}", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 22, color: Colors.green[800])),
+                  Text("Margem Total: ${marginPercent.toStringAsFixed(1)}%", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.green[700])),
+                ],
+              )
+            ],
+          )
+        ],
+      ),
     );
   }
 
@@ -348,12 +306,12 @@ class SummaryStep extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: TextStyle(fontSize: 13, color: Colors.grey[800], fontWeight: isBold ? FontWeight.bold : FontWeight.normal)),
+          Text(label, style: TextStyle(fontSize: 14, color: Colors.grey[800], fontWeight: isBold ? FontWeight.bold : FontWeight.normal)),
           Text(
             "${isNegative ? '-' : ''}R\$ ${value.toStringAsFixed(2)}", 
             style: TextStyle(
-              fontSize: 14, 
-              fontWeight: isBold ? FontWeight.bold : FontWeight.w500,
+              fontSize: 15, 
+              fontWeight: isBold ? FontWeight.bold : FontWeight.w500, 
               color: isNegative ? Colors.red[800] : Colors.black87
             )
           ),

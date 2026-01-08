@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import '../../../models/quote_model.dart';
-import '../../../services/quote_service.dart';
+import '../models/quote_model.dart';
+import '../services/quote_service.dart';
 import 'admin_quote_detail_screen.dart';
+import 'rod_builder_screen.dart'; // <--- Import para criar novo orçamento
 
 class AdminQuotesScreen extends StatefulWidget {
   const AdminQuotesScreen({super.key});
@@ -12,13 +13,11 @@ class AdminQuotesScreen extends StatefulWidget {
 
 class _AdminQuotesScreenState extends State<AdminQuotesScreen> with SingleTickerProviderStateMixin {
   final QuoteService _quoteService = QuoteService();
-  late Stream<List<Quote>> _allQuotesStream;
   late TabController _tabController;
 
   @override
   void initState() {
     super.initState();
-    _allQuotesStream = _quoteService.getAllQuotesStream();
     _tabController = TabController(length: 2, vsync: this);
   }
 
@@ -28,57 +27,85 @@ class _AdminQuotesScreenState extends State<AdminQuotesScreen> with SingleTicker
     super.dispose();
   }
 
+  void _confirmDelete(String quoteId) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Excluir Orçamento?"),
+        content: const Text(
+          "Esta ação é irreversível.\n\n"
+          "Se o orçamento estiver Aprovado/Produção/Concluído, "
+          "os itens serão estornados ao estoque automaticamente."
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Cancelar"),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              try {
+                await _quoteService.deleteQuote(quoteId);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("Orçamento excluído com sucesso!"), backgroundColor: Colors.green)
+                  );
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text("Erro ao excluir: $e"), backgroundColor: Colors.red)
+                  );
+                }
+              }
+            },
+            child: const Text("EXCLUIR", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    // CORREÇÃO: Removemos o Scaffold com AppBar. 
-    // Usamos um Scaffold sem AppBar para o fundo, e construímos a TabBar manualmente.
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: Colors.grey[50], // Padronização
       body: Column(
         children: [
-          // --- TAB BAR MANUAL (Antes ficava no AppBar) ---
           Container(
-            color: Colors.white,
+            color: Colors.blueGrey[800],
             child: TabBar(
               controller: _tabController,
-              indicatorColor: Colors.blueGrey[800],
-              labelColor: Colors.blueGrey[800],
-              unselectedLabelColor: Colors.grey,
+              labelColor: Colors.white,
+              unselectedLabelColor: Colors.white60,
+              indicatorColor: Colors.amber,
               tabs: const [
-                Tab(text: 'ENCAMINHADOS', icon: Icon(Icons.inbox)),
-                Tab(text: 'RASCUNHOS', icon: Icon(Icons.edit_note)),
+                Tab(text: 'Encaminhados'),
+                Tab(text: 'Rascunhos'),
               ],
             ),
           ),
-          
-          // --- CONTEÚDO ---
           Expanded(
             child: StreamBuilder<List<Quote>>(
-              stream: _allQuotesStream,
+              stream: _quoteService.getAllQuotesStream(),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
-                if (snapshot.hasError) {
-                  return Center(child: Text('Erro: ${snapshot.error}'));
-                }
                 if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                  return const Center(child: Text('Nenhum orçamento encontrado.'));
+                  return const Center(child: Text("Nenhum orçamento encontrado."));
                 }
 
-                List<Quote> allQuotes = snapshot.data!;
-                
-                // Ordena por data (mais novos primeiro)
-                allQuotes.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-
-                final receivedQuotes = allQuotes.where((q) => q.status != 'rascunho').toList();
+                final allQuotes = snapshot.data!;
+                final submittedQuotes = allQuotes.where((q) => q.status != 'rascunho').toList();
                 final draftQuotes = allQuotes.where((q) => q.status == 'rascunho').toList();
 
                 return TabBarView(
                   controller: _tabController,
                   children: [
-                    _buildQuoteList(receivedQuotes, isDraft: false),
-                    _buildQuoteList(draftQuotes, isDraft: true),
+                    _buildQuoteList(submittedQuotes),
+                    _buildQuoteList(draftQuotes),
                   ],
                 );
               },
@@ -86,115 +113,102 @@ class _AdminQuotesScreenState extends State<AdminQuotesScreen> with SingleTicker
           ),
         ],
       ),
+      // --- NOVO: Botão para Criar Orçamento (Admin) ---
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          Navigator.push(context, MaterialPageRoute(builder: (_) => const RodBuilderScreen()));
+        },
+        backgroundColor: Colors.blueGrey[800],
+        child: const Icon(Icons.add, color: Colors.white),
+      ),
     );
   }
 
-  Widget _buildQuoteList(List<Quote> quotes, {required bool isDraft}) {
+  Widget _buildQuoteList(List<Quote> quotes) {
     if (quotes.isEmpty) {
-      return Center(
+      return const Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(isDraft ? Icons.note_alt_outlined : Icons.inbox_outlined, size: 60, color: Colors.grey[300]),
-            const SizedBox(height: 16),
-            Text(
-              isDraft ? 'Nenhum rascunho.' : 'Nenhum orçamento recebido.',
-              style: TextStyle(color: Colors.grey[500]),
-            ),
+            Icon(Icons.inbox_outlined, size: 48, color: Colors.grey),
+            SizedBox(height: 8),
+            Text("Lista vazia.", style: TextStyle(color: Colors.grey)),
           ],
         ),
       );
     }
 
     return ListView.builder(
-      padding: const EdgeInsets.all(16.0),
+      padding: const EdgeInsets.all(12),
       itemCount: quotes.length,
       itemBuilder: (context, index) {
-        return _buildQuoteCard(quotes[index]);
+        final quote = quotes[index];
+        final date = quote.createdAt.toDate();
+        final dateStr = "${date.day}/${date.month}/${date.year}";
+
+        return Card(
+          margin: const EdgeInsets.only(bottom: 12),
+          elevation: 2,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          child: ListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            onTap: () {
+              Navigator.push(
+                context, 
+                MaterialPageRoute(builder: (_) => AdminQuoteDetailScreen(quote: quote))
+              );
+            },
+            title: Text(
+              quote.clientName.isEmpty ? "Cliente (Sem nome)" : quote.clientName,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 4),
+                Text("Data: $dateStr  •  Total: R\$ ${quote.totalPrice.toStringAsFixed(2)}"),
+                const SizedBox(height: 6),
+                _buildStatusBadge(quote.status),
+              ],
+            ),
+            trailing: IconButton(
+              icon: const Icon(Icons.delete_outline, color: Colors.red),
+              tooltip: 'Excluir Orçamento',
+              onPressed: () {
+                if (quote.id != null) {
+                  _confirmDelete(quote.id!);
+                }
+              },
+            ),
+          ),
+        );
       },
     );
   }
 
-  Widget _buildQuoteCard(Quote quote) {
-    String formattedDate = '${quote.createdAt.toDate().day}/${quote.createdAt.toDate().month}/${quote.createdAt.toDate().year}';
-    
-    String clientDisplay = quote.clientName.isNotEmpty ? quote.clientName : 'Cliente Desconhecido';
-    String locationDisplay = '';
-    if (quote.clientCity.isNotEmpty) {
-      locationDisplay = ' - ${quote.clientCity}/${quote.clientState}';
+  Widget _buildStatusBadge(String status) {
+    Color color;
+    switch (status.toLowerCase()) {
+      case 'pendente': color = Colors.orange; break;
+      case 'aprovado': color = Colors.blue; break;
+      case 'producao': color = Colors.purple; break;
+      case 'concluido': color = Colors.green; break;
+      case 'rascunho': color = Colors.grey; break;
+      case 'cancelado': color = Colors.red; break;
+      default: color = Colors.blueGrey;
     }
 
-    String titleText = '$clientDisplay$locationDisplay - $formattedDate';
-
-    return Card(
-      color: const Color(0xFF2C2C2C),
-      margin: const EdgeInsets.only(bottom: 12.0),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        
-        title: Text(
-          titleText, 
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.white)
-        ),
-        
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 6.0),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: _getStatusColor(quote.status).withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: _getStatusColor(quote.status), width: 1),
-                ),
-                child: Text(
-                  quote.status.toUpperCase(),
-                  style: TextStyle(
-                    color: _getStatusColor(quote.status),
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        
-        trailing: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Text(
-              'R\$ ${quote.totalPrice.toStringAsFixed(2)}',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.blueGrey[100]),
-            ),
-            const Icon(Icons.chevron_right, color: Colors.grey, size: 18),
-          ],
-        ),
-        
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => AdminQuoteDetailScreen(quote: quote),
-            ),
-          );
-        },
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: color.withOpacity(0.5))
+      ),
+      child: Text(
+        status.toUpperCase(),
+        style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: color),
       ),
     );
-  }
-
-  Color _getStatusColor(String status) {
-    switch (status.toLowerCase()) {
-      case 'pendente': return Colors.yellowAccent;
-      case 'rascunho': return Colors.grey;
-      case 'enviado': return Colors.lightBlueAccent;
-      case 'aprovado': return Colors.greenAccent;
-      case 'producao': return Colors.orangeAccent;
-      case 'concluido': return Colors.purpleAccent;
-      default: return Colors.white;
-    }
   }
 }
