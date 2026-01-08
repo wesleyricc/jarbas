@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/rod_builder_provider.dart';
+import '../utils/financial_helper.dart'; // Import Helper
 
 class SummaryStep extends StatelessWidget {
   final bool isAdmin;
@@ -13,18 +14,15 @@ class SummaryStep extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // 1. DADOS DO CLIENTE (Visível para TODOS)
         _buildClientInfoCard(provider),
         const SizedBox(height: 24),
 
-        // 2. COMPONENTES SELECIONADOS
         const Text(
           "Itens do Projeto",
           style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blueGrey),
         ),
         const SizedBox(height: 12),
 
-        // Se for ADMIN mostra detalhado (com valores), se for CLIENTE mostra simples
         if (isAdmin) ...[
           _buildAdminComponentList(provider),
           const SizedBox(height: 24),
@@ -36,7 +34,10 @@ class SummaryStep extends StatelessWidget {
     );
   }
 
-  // --- 1. DADOS DO CLIENTE (COMUM) ---
+  // ... (Métodos _buildClientInfoCard, _buildInfoRow, _buildClientComponentList permanecem iguais) ...
+  // Vou omitir os métodos que NÃO mudaram para economizar espaço na resposta, 
+  // mas incluirei o código completo dos métodos alterados.
+
   Widget _buildClientInfoCard(RodBuilderProvider provider) {
     return Card(
       elevation: 2,
@@ -92,7 +93,6 @@ class SummaryStep extends StatelessWidget {
     );
   }
 
-  // --- 2. LISTA SIMPLES (CLIENTE) ---
   Widget _buildClientComponentList(RodBuilderProvider provider) {
     return Column(
       children: [
@@ -134,7 +134,6 @@ class SummaryStep extends StatelessWidget {
     );
   }
 
-  // --- 3. LISTA DETALHADA E FINANCEIRO (ADMIN) ---
   Widget _buildAdminComponentList(RodBuilderProvider provider) {
     return Column(
       children: [
@@ -147,6 +146,7 @@ class SummaryStep extends StatelessWidget {
     );
   }
 
+  // --- AQUI A MUDANÇA: Usa o Helper para calcular item a item ---
   Widget _buildDetailedGroup(String categoryName, List<RodItem> items) {
     if (items.isEmpty) return const SizedBox.shrink();
 
@@ -159,16 +159,19 @@ class SummaryStep extends StatelessWidget {
           child: Text(categoryName.toUpperCase(), style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blueGrey[900])),
         ),
         ...items.map((item) {
-          double totalCost = item.component.costPrice * item.quantity;
-          double totalSale = item.component.price * item.quantity;
-          double profit = totalSale - totalCost;
-          double margin = totalSale > 0 ? (profit / totalSale) * 100 : 0.0;
+          // Usa o Helper para calcular métricas unitárias/totais do item
+          final metrics = FinancialHelper.calculateItemMetrics(
+            costPrice: item.component.costPrice,
+            sellPrice: item.component.price,
+            quantity: item.quantity,
+          );
+          
           String variation = item.variation != null ? " [${item.variation}]" : "";
 
           return Container(
             color: Colors.white,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            margin: const EdgeInsets.only(bottom: 1), // Separador visual
+            margin: const EdgeInsets.only(bottom: 1),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -193,7 +196,7 @@ class SummaryStep extends StatelessWidget {
                         children: [
                           const Text("CUSTO", style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.grey)),
                           Text("Un: R\$ ${item.component.costPrice.toStringAsFixed(2)}", style: const TextStyle(fontSize: 10, color: Colors.black54)),
-                          Text("Tot: R\$ ${totalCost.toStringAsFixed(2)}", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.red[800])),
+                          Text("Tot: R\$ ${metrics.totalCost.toStringAsFixed(2)}", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.red[800])),
                         ],
                       ),
                     ),
@@ -206,7 +209,7 @@ class SummaryStep extends StatelessWidget {
                         children: [
                           const Text("VENDA", style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.grey)),
                           Text("Un: R\$ ${item.component.price.toStringAsFixed(2)}", style: const TextStyle(fontSize: 10, color: Colors.black54)),
-                          Text("Tot: R\$ ${totalSale.toStringAsFixed(2)}", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blue[800])),
+                          Text("Tot: R\$ ${metrics.totalRevenue.toStringAsFixed(2)}", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blue[800])),
                         ],
                       ),
                     ),
@@ -217,8 +220,8 @@ class SummaryStep extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
-                          Text("Mg: ${margin.toStringAsFixed(0)}%", style: TextStyle(fontSize: 9, color: Colors.green[800])),
-                          Text("R\$ ${profit.toStringAsFixed(2)}", style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Colors.green[900])),
+                          Text("Mg: ${metrics.marginPercent.toStringAsFixed(0)}%", style: TextStyle(fontSize: 9, color: Colors.green[800])),
+                          Text("R\$ ${metrics.grossProfit.toStringAsFixed(2)}", style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Colors.green[900])),
                         ],
                       ),
                     ),
@@ -232,8 +235,11 @@ class SummaryStep extends StatelessWidget {
     );
   }
 
+  // --- AQUI A MUDANÇA: Lógica de Totais ---
   Widget _buildAdminFinancialTotals(RodBuilderProvider provider) {
-    // Recalcula custos totais para o resumo
+    // Para usar o helper global, precisaria converter RodItems para Maps ou criar um método específico.
+    // Como os dados estão "vivos" no provider, fazemos a soma local rápida, mas usando a lógica de lucro/margem padronizada.
+    
     double sumCost(List<RodItem> list) => list.fold(0.0, (sum, item) => sum + (item.component.costPrice * item.quantity));
     
     double totalPartsCost = 0.0;
@@ -243,15 +249,10 @@ class SummaryStep extends StatelessWidget {
     totalPartsCost += sumCost(provider.selectedPassadoresList);
     totalPartsCost += sumCost(provider.selectedAcessoriosList);
 
-    double totalRevenue = provider.totalPrice; // Já inclui mão de obra se houver
-    double totalCost = totalPartsCost; // Mão de obra geralmente é lucro puro ou tem custo hora (aqui tratamos extraLaborCost como receita adicionada)
-    
-    // Se quiser deduzir um custo da mão de obra, precisaria de outro campo. 
-    // Assumindo que o extraLaborCost é Valor Cobrado e entra 100% no lucro bruto do serviço, 
-    // mas não tem "custo de peça".
-    
-    double grossProfit = totalRevenue - totalCost;
-    double marginPercent = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0.0;
+    // Métrica Final
+    double totalRevenue = provider.totalPrice; 
+    double totalProfit = totalRevenue - totalPartsCost;
+    double marginPercent = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0.0;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -289,7 +290,7 @@ class SummaryStep extends StatelessWidget {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text("R\$ ${grossProfit.toStringAsFixed(2)}", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 22, color: Colors.green[800])),
+                  Text("R\$ ${totalProfit.toStringAsFixed(2)}", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 22, color: Colors.green[800])),
                   Text("Margem Total: ${marginPercent.toStringAsFixed(1)}%", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.green[700])),
                 ],
               )

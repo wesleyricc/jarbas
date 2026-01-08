@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../models/user_model.dart';
 import '../../../services/user_service.dart';
+import '../../../utils/app_constants.dart'; // Import Constants
 
 class AdminUserEditScreen extends StatefulWidget {
   final UserModel user;
@@ -17,12 +18,22 @@ class _AdminUserEditScreenState extends State<AdminUserEditScreen> {
   bool _isLoading = false;
 
   late String _currentRole;
-  final List<String> _roleOptions = ['cliente', 'fabricante', 'lojista'];
+  
+  // Usa as constantes para definir as opções de Role
+  final List<String> _roleOptions = [
+    AppConstants.roleCliente,
+    AppConstants.roleFabricante,
+    AppConstants.roleLojista
+  ];
 
   @override
   void initState() {
     super.initState();
     _currentRole = widget.user.role;
+    // Fallback caso a role do usuário não esteja na lista (ex: legado)
+    if (!_roleOptions.contains(_currentRole)) {
+      _currentRole = AppConstants.roleCliente;
+    }
   }
 
   Future<void> _saveRole() async {
@@ -33,7 +44,6 @@ class _AdminUserEditScreenState extends State<AdminUserEditScreen> {
     setState(() { _isLoading = true; });
 
     try {
-      // Chama o novo método do UserService para atualizar a função
       await _userService.updateUserRole(widget.user.uid, _currentRole);
 
       if (mounted) {
@@ -43,7 +53,7 @@ class _AdminUserEditScreenState extends State<AdminUserEditScreen> {
             backgroundColor: Colors.green,
           ),
         );
-        Navigator.pop(context); // Volta para a lista de usuários
+        Navigator.pop(context); 
       }
 
     } catch (e) {
@@ -75,7 +85,6 @@ class _AdminUserEditScreenState extends State<AdminUserEditScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Informações do Usuário (Não-editáveis)
               Text(
                 'Usuário:',
                 style: Theme.of(context).textTheme.titleMedium,
@@ -97,7 +106,6 @@ class _AdminUserEditScreenState extends State<AdminUserEditScreen> {
               ),
               const Divider(height: 48),
 
-              // Campo de Edição da Função (Role)
               Text(
                 'Função (Role)',
                 style: Theme.of(context).textTheme.titleMedium,
@@ -124,13 +132,12 @@ class _AdminUserEditScreenState extends State<AdminUserEditScreen> {
               ),
               const SizedBox(height: 32),
 
-              // Botão Salvar
               _isLoading
                   ? const Center(child: CircularProgressIndicator())
                   : ElevatedButton(
                       onPressed: _saveRole,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red[700], // Botão de admin
+                        backgroundColor: Colors.red[700], 
                         foregroundColor: Colors.white,
                       ),
                       child: const Text('Salvar Alterações'),

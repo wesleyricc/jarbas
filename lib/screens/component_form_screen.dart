@@ -1,15 +1,16 @@
-import 'dart:typed_data'; // Para Uint8List (essencial para Web)
+import 'dart:typed_data'; 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // Para InputFormatters
-import 'package:image_picker/image_picker.dart'; // Importe o ImagePicker
-import 'package:url_launcher/url_launcher.dart'; // Para abrir links
+import 'package:flutter/services.dart'; 
+import 'package:image_picker/image_picker.dart'; 
+import 'package:url_launcher/url_launcher.dart'; 
 import '../../../models/component_model.dart';
 import '../../../services/component_service.dart';
 import '../../../services/storage_service.dart';
 import '../../../services/config_service.dart';
+import '../../../utils/app_constants.dart'; // Import Constantes
 
 class ComponentFormScreen extends StatefulWidget {
-  final Component? component; // Se nulo = Adicionar, Se existe = Editar
+  final Component? component; 
 
   const ComponentFormScreen({super.key, this.component});
 
@@ -20,54 +21,36 @@ class ComponentFormScreen extends StatefulWidget {
 class _ComponentFormScreenState extends State<ComponentFormScreen> {
   final _formKey = GlobalKey<FormState>();
   
-  // Serviços
   final ComponentService _componentService = ComponentService();
   final StorageService _storageService = StorageService();
   final ConfigService _configService = ConfigService();
 
   bool _isLoading = false;
 
-  // Controladores de Texto
   late TextEditingController _nameController;
   late TextEditingController _descController;
-  
-  // Controladores de Preço
   late TextEditingController _supplierPriceController; 
   late TextEditingController _costPriceController;     
   late TextEditingController _priceController;         
-  
   late TextEditingController _stockController;
   late TextEditingController _supplierLinkController;
   
   String? _selectedCategoryKey;
 
-  // Variações (Lista Local)
   List<Map<String, TextEditingController>> _variationsControllers = [];
 
-  // Estado da Imagem
   String? _currentImageUrl; 
   bool _isUploading = false;
   double _uploadProgress = 0.0;
   Uint8List? _newImageBytes; 
   String? _newImageExtension;
 
-  // Configurações Globais
   double _defaultMargin = 0.0; 
   double _supplierDiscount = 0.0;
-
-  // Mapa de categorias
-  final Map<String, String> _categoriesMap = {
-    'blank': 'Blank',
-    'cabo': 'Cabo',
-    'passadores': 'Passadores',
-    'reel_seat': 'Reel Seat',
-    'acessorios': 'Acessórios'
-  };
 
   @override
   void initState() {
     super.initState();
-    // Inicializa os controladores
     _nameController = TextEditingController(text: widget.component?.name ?? '');
     _descController = TextEditingController(text: widget.component?.description ?? '');
     
@@ -81,7 +64,6 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
     _selectedCategoryKey = widget.component?.category;
     _currentImageUrl = widget.component?.imageUrl;
 
-    // 1. Carrega as Variações Existentes
     if (widget.component != null && widget.component!.variations.isNotEmpty) {
       widget.component!.variations.forEach((key, value) {
         _variationsControllers.add({
@@ -91,9 +73,7 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
       });
     }
 
-    // 2. Carrega Configurações e Adiciona Listeners
     _loadSettings();
-    
     _supplierPriceController.addListener(_calculateCostPrice);
     _costPriceController.addListener(_calculateSellingPrice);
   }
@@ -111,8 +91,6 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
       print("Erro ao carregar config: $e");
     }
   }
-
-  // --- LÓGICA DE PREÇO ---
 
   void _calculateCostPrice() {
     String supplierText = _supplierPriceController.text;
@@ -141,8 +119,6 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
     }
   }
 
-  // --- LÓGICA DE VARIAÇÕES ---
-  
   void _updateTotalStock() {
     if (_variationsControllers.isEmpty) return;
     
@@ -192,11 +168,8 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
       v['name']?.dispose();
       v['stock']?.dispose();
     }
-    
     super.dispose();
   }
-
-  // --- IMAGEM ---
 
   Future<void> _pickImage() async {
     try {
@@ -239,8 +212,6 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao abrir link: $url')));
     }
   }
-
-  // --- SALVAR ---
 
   Future<void> _saveComponent() async {
     if (!_formKey.currentState!.validate()) return;
@@ -287,7 +258,7 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
         id: widget.component?.id ?? '',
         name: _nameController.text,
         description: _descController.text,
-        category: _selectedCategoryKey!,
+        category: _selectedCategoryKey ?? AppConstants.catBlank, // Fallback constante
         
         supplierPrice: double.tryParse(_supplierPriceController.text) ?? 0.0,
         costPrice: double.tryParse(_costPriceController.text) ?? 0.0,
@@ -350,8 +321,6 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
     }
   }
 
-  // --- UI ---
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -373,7 +342,6 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // 1. IMAGEM
               _buildImagePreview(),
               const SizedBox(height: 16),
               ElevatedButton.icon(
@@ -390,19 +358,19 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
               
               const Divider(height: 32),
               
-              // 2. CATEGORIA
+              // USA CONSTANTES PARA O DROPDOWN
               DropdownButtonFormField<String>(
                 value: _selectedCategoryKey,
                 hint: const Text('Categoria'),
                 decoration: const InputDecoration(border: OutlineInputBorder(), labelText: 'Categoria'),
-                items: _categoriesMap.entries.map((e) => DropdownMenuItem(value: e.key, child: Text(e.value))).toList(),
+                // Gera a lista a partir do Map de Constantes
+                items: AppConstants.categoryLabels.entries.map((e) => DropdownMenuItem(value: e.key, child: Text(e.value))).toList(),
                 onChanged: (v) => setState(() => _selectedCategoryKey = v),
                 validator: (v) => v == null ? 'Selecione uma categoria' : null,
               ),
               
               const SizedBox(height: 16),
               
-              // 3. NOME E DESCRIÇÃO
               TextFormField(
                 controller: _nameController,
                 decoration: const InputDecoration(labelText: 'Nome', border: OutlineInputBorder()),
@@ -419,7 +387,6 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
               const Text("Precificação", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
               const SizedBox(height: 16),
 
-              // 4. FORNECEDOR
               TextFormField(
                 controller: _supplierPriceController,
                 decoration: const InputDecoration(
@@ -430,22 +397,16 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}'))],
               ),
-              
               const SizedBox(height: 16),
-              
-              // 5. CUSTO E VENDA (Lado a Lado)
               Row(
                 children: [
-                  // CUSTO (Agora com Helper do Desconto)
                   Expanded(
                     child: TextFormField(
                       controller: _costPriceController,
                       decoration: InputDecoration(
                         labelText: 'Custo (R\$)', 
                         border: const OutlineInputBorder(),
-                        //fillColor: const Color(0xFFFFFDE7), 
                         filled: true,
-                        // --- AQUI: Helper de Desconto ---
                         helperText: _supplierDiscount > 0 ? 'Desconto: ${_supplierDiscount.toStringAsFixed(0)}%' : null,
                       ),
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -454,14 +415,12 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
                     ),
                   ),
                   const SizedBox(width: 16),
-                  // VENDA (Com Helper de Margem)
                   Expanded(
                     child: TextFormField(
                       controller: _priceController,
                       decoration: InputDecoration(
                         labelText: 'Venda (R\$)',
                         border: const OutlineInputBorder(),
-                        // --- Helper de Margem ---
                         helperText: _defaultMargin > 0 ? 'Margem: ${_defaultMargin.toStringAsFixed(0)}%' : null,
                       ),
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -474,12 +433,10 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
 
               const Divider(height: 32),
               
-              // 6. ESTOQUE E VARIAÇÕES
               const Text("Estoque e Variações", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
               const SizedBox(height: 8),
 
               if (_variationsControllers.isEmpty) ...[
-                // Modo Simples
                 Row(
                   children: [
                     Expanded(
@@ -499,7 +456,6 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
                   ],
                 ),
               ] else ...[
-                // Modo Variações
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
@@ -511,7 +467,7 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
                     children: [
                       const Row(
                         children: [
-                          Expanded(flex: 2, child: Text("Variação (ex: Tam 10)", style: TextStyle(color: Colors.grey))),
+                          Expanded(flex: 2, child: Text("Variação", style: TextStyle(color: Colors.grey))),
                           SizedBox(width: 8),
                           Expanded(flex: 1, child: Text("Qtd", style: TextStyle(color: Colors.grey))),
                           SizedBox(width: 40),
@@ -551,13 +507,11 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
                           ),
                         );
                       }),
-                      
                       TextButton.icon(
                         onPressed: _addVariationRow, 
                         icon: const Icon(Icons.add), 
                         label: const Text("Adicionar Variação")
                       ),
-                      
                       const Divider(),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -572,8 +526,6 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
               ],
 
               const SizedBox(height: 16),
-              
-              // 7. LINK
               TextFormField(
                 controller: _supplierLinkController, 
                 decoration: const InputDecoration(labelText: 'Link do Fornecedor', border: OutlineInputBorder(), suffixIcon: Icon(Icons.link))
@@ -586,7 +538,6 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
 
               const SizedBox(height: 32),
               
-              // 8. BOTÃO SALVAR
               _isLoading 
                 ? const Center(child: CircularProgressIndicator())
                 : ElevatedButton(

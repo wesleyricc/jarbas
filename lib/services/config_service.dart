@@ -1,8 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../utils/app_constants.dart';
 
 class ConfigService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final String _collection = 'settings';
+  // Agora usa a constante
+  final String _collection = AppConstants.colSettings;
   final String _doc = 'global_config';
 
   Future<Map<String, dynamic>> getSettings() async {
@@ -13,7 +15,7 @@ class ConfigService {
       }
       return {
         'defaultMargin': 0.0,
-        'supplierDiscount': 0.0, // (NOVO) Padrão 0% de desconto
+        'supplierDiscount': 0.0,
         'customizationPrice': 25.0,
         'supplierPhone': '',
       };
@@ -25,13 +27,13 @@ class ConfigService {
 
   Future<void> saveSettings({
     required double defaultMargin,
-    required double supplierDiscount, // (NOVO)
+    required double supplierDiscount,
     required double customizationPrice,
     required String supplierPhone,
   }) async {
     await _firestore.collection(_collection).doc(_doc).set({
       'defaultMargin': defaultMargin,
-      'supplierDiscount': supplierDiscount, // (NOVO)
+      'supplierDiscount': supplierDiscount,
       'customizationPrice': customizationPrice,
       'supplierPhone': supplierPhone.replaceAll(RegExp(r'[^\d]'), ''),
     }, SetOptions(merge: true));

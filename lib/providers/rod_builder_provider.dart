@@ -4,6 +4,7 @@ import '../models/component_model.dart';
 import '../models/quote_model.dart';
 import '../models/kit_model.dart';
 import '../services/quote_service.dart';
+import '../utils/app_constants.dart'; // Importação das constantes
 
 class RodItem {
   final Component component;
@@ -47,7 +48,7 @@ class RodBuilderProvider extends ChangeNotifier {
   double get extraLaborCost => _extraLaborCost;
   double get totalPrice => _totalPrice;
 
-  // --- MÉTODOS DE AÇÃO ---
+  // --- MÉTODOS DE AÇÃO (Adicionar/Remover/Atualizar) ---
 
   // Blanks
   void addBlank(Component c, int qty, {String? variation}) {
@@ -157,6 +158,7 @@ class RodBuilderProvider extends ChangeNotifier {
 
   // --- CONFIGURAÇÕES ---
   Future<void> fetchSettings() async {
+    // Espaço reservado para carregar config global se necessário no futuro
     await Future.delayed(Duration.zero); 
   }
 
@@ -200,7 +202,10 @@ class RodBuilderProvider extends ChangeNotifier {
       Future<Component?> fetchComp(String id) async {
         if (id.isEmpty) return null;
         try {
-          final doc = await firestore.collection('components').doc(id).get();
+          // Usa a constante para acessar a coleção (embora aqui seja string direta na query)
+          // Idealmente: firestore.collection(AppConstants.colComponents)...
+          // Mas manteremos compatível com o ID direto.
+          final doc = await firestore.collection(AppConstants.colComponents).doc(id).get();
           if (doc.exists) return Component.fromFirestore(doc);
         } catch (e) {
           print("Erro carregando componente: $e");
@@ -239,7 +244,7 @@ class RodBuilderProvider extends ChangeNotifier {
       return true;
   }
 
-  // --- SALVAR ---
+  // --- SALVAR ORÇAMENTO ---
   Future<bool> saveQuote(String userId, {required String status}) async {
     List<Map<String, dynamic>> convertList(List<RodItem> list) {
       return list.map((item) => {
@@ -253,7 +258,7 @@ class RodBuilderProvider extends ChangeNotifier {
 
     final quote = Quote(
       userId: userId,
-      status: status,
+      status: status, // Caller deve passar AppConstants.statusX
       createdAt: Timestamp.now(),
       clientName: clientName,
       clientPhone: clientPhone,
@@ -280,7 +285,6 @@ class RodBuilderProvider extends ChangeNotifier {
 
   // --- CARREGAR ORÇAMENTO EXISTENTE PARA EDIÇÃO ---
   Future<void> loadFromQuote(Quote quote) async {
-    // 1. Carregar dados do cliente
     clientName = quote.clientName;
     clientPhone = quote.clientPhone;
     clientCity = quote.clientCity;
@@ -291,7 +295,8 @@ class RodBuilderProvider extends ChangeNotifier {
     final FirebaseFirestore firestore = FirebaseFirestore.instance;
 
     Future<Component?> findComponentByName(String name) async {
-       final snapshot = await firestore.collection('components')
+       // Usa constante na coleção
+       final snapshot = await firestore.collection(AppConstants.colComponents)
            .where('name', isEqualTo: name)
            .limit(1)
            .get();
@@ -308,18 +313,19 @@ class RodBuilderProvider extends ChangeNotifier {
         String name = item['name'];
         Component? comp = await findComponentByName(name);
         
-        // CORREÇÃO: Passando todos os parâmetros obrigatórios
+        // Se o componente não for encontrado (ex: deletado), cria um temporário
+        // para exibir no orçamento sem quebrar a tela.
         comp ??= Component(
             id: '', 
             name: name, 
-            description: '', // Descrição vazia
-            category: '', 
+            description: '',
+            category: AppConstants.catBlank, // Padrão seguro via constante
             price: (item['price'] ?? 0).toDouble(), 
             costPrice: (item['cost'] ?? 0).toDouble(), 
             stock: 0, 
             imageUrl: '', 
             variations: {},
-            attributes: {}, // ADICIONADO: Mapa de atributos vazio
+            attributes: {},
           );
 
         target.add(RodItem(
@@ -340,5 +346,3 @@ class RodBuilderProvider extends ChangeNotifier {
     notifyListeners();
   }
 }
-
-//aa

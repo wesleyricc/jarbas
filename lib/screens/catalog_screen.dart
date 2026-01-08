@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import '../models/component_model.dart';
 import '../services/component_service.dart';
-import '../services/user_service.dart'; // Para verificar o admin
-import '../services/auth_service.dart'; // Para o AuthService
-import 'component_form_screen.dart'; // Para o admin editar
+import '../services/user_service.dart';
+import '../services/auth_service.dart';
+import '../utils/app_constants.dart'; // Import Constantes
+import 'component_form_screen.dart';
 
 class CatalogScreen extends StatefulWidget {
   const CatalogScreen({super.key});
@@ -17,18 +18,8 @@ class _CatalogScreenState extends State<CatalogScreen> {
   final UserService _userService = UserService();
   final AuthService _authService = AuthService();
 
-  String? _selectedCategoryKey; // Categoria selecionada para filtro (ex: 'reel_seat')
+  String? _selectedCategoryKey;
 
-  // Mapa de categorias (Chave: Nome de Exibição)
-  final Map<String, String> _categoriesMap = {
-    'blank': 'Blank',
-    'cabo': 'Cabo',
-    'passadores': 'Passadores',
-    'reel_seat': 'Reel Seat',
-    'acessorios': 'Acessórios', // ADICIONADO AQUI
-  };
-
-  // Futuro para guardar o status de admin
   late Future<bool> _isAdminFuture;
 
   @override
@@ -39,29 +30,27 @@ class _CatalogScreenState extends State<CatalogScreen> {
 
   Future<bool> _getAdminStatus() async {
     final user = _authService.currentUser;
-    if (user == null) return false; // Se não há usuário (anônimo), não é admin
+    if (user == null) return false;
     return await _userService.isAdmin(user);
   }
 
-  // --- Método para mostrar a imagem ampliada ---
   void _showImageDialog(BuildContext context, String imageUrl) {
     showDialog(
       context: context,
       builder: (BuildContext context) {
         return Dialog(
-          backgroundColor: Colors.transparent, // Fundo transparente
-          insetPadding: const EdgeInsets.all(10), // Margem da tela
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.all(10),
           child: Stack(
             alignment: Alignment.topRight,
             children: [
-              // --- Widget de Zoom e Pan ---
               InteractiveViewer(
-                panEnabled: true, // Permitir arrastar
+                panEnabled: true,
                 minScale: 0.5,
-                maxScale: 4.0, // Permitir zoom de até 4x
+                maxScale: 4.0,
                 child: Image.network(
                   imageUrl,
-                  fit: BoxFit.contain, // Para ver a imagem inteira
+                  fit: BoxFit.contain,
                   loadingBuilder: (context, child, loadingProgress) {
                     if (loadingProgress == null) return child;
                     return const Center(child: CircularProgressIndicator());
@@ -73,9 +62,6 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   },
                 ),
               ),
-              // --- Fim do Widget de Zoom ---
-
-              // Botão de Fechar
               Padding(
                 padding: const EdgeInsets.all(8.0),
                 child: IconButton(
@@ -109,7 +95,6 @@ class _CatalogScreenState extends State<CatalogScreen> {
         return Scaffold(
           appBar: AppBar(
             title: const Text('Catálogo de Componentes'),
-            // Admin pode adicionar novo item
             actions: [
               if (isAdmin)
                 IconButton(
@@ -128,13 +113,10 @@ class _CatalogScreenState extends State<CatalogScreen> {
           ),
           body: Column(
             children: [
-              // Filtro de Categorias
               _buildCategoryFilter(),
               
-              // Lista de Componentes
               Expanded(
                 child: StreamBuilder<List<Component>>(
-                  // O stream muda com base na categoria selecionada
                   stream: _selectedCategoryKey == null
                       ? _componentService.getComponentsStream()
                       : _componentService.getComponentsByCategoryStream(_selectedCategoryKey!),
@@ -149,14 +131,12 @@ class _CatalogScreenState extends State<CatalogScreen> {
                       return const Center(child: Text('Nenhum componente encontrado.'));
                     }
 
-                    // Se temos dados, exibimos a lista
                     List<Component> components = snapshot.data!;
                     return ListView.builder(
                       padding: const EdgeInsets.all(16.0),
                       itemCount: components.length,
                       itemBuilder: (context, index) {
                         Component component = components[index];
-                        // Passa o status de admin para o card
                         return _buildComponentCard(component, isAdmin);
                       },
                     );
@@ -170,7 +150,6 @@ class _CatalogScreenState extends State<CatalogScreen> {
     );
   }
 
-  // Widget para o filtro de categorias
   Widget _buildCategoryFilter() {
     return Container(
       height: 60,
@@ -178,15 +157,15 @@ class _CatalogScreenState extends State<CatalogScreen> {
       child: ListView(
         scrollDirection: Axis.horizontal,
         children: [
-          // Botão "Todos"
+          // Botão Todos (Não vem do AppConstants)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4.0),
             child: ChoiceChip(
               label: const Text('Todos'),
               selected: _selectedCategoryKey == null,
-              selectedColor: Colors.blueGrey[800], // Cor selecionada
+              selectedColor: Colors.blueGrey[800],
               labelStyle: TextStyle(
-                color: _selectedCategoryKey == null ? Colors.white : Colors.white,
+                color: _selectedCategoryKey == null ? Colors.white : Colors.black, // Correção visual
                 fontWeight: _selectedCategoryKey == null ? FontWeight.bold : FontWeight.normal,
               ),
               onSelected: (selected) {
@@ -194,8 +173,8 @@ class _CatalogScreenState extends State<CatalogScreen> {
               },
             ),
           ),
-          // Botões de Categoria (baseado no Mapa)
-          ..._categoriesMap.entries.map((entry) {
+          // Botões de Categoria via AppConstants
+          ...AppConstants.categoryLabels.entries.map((entry) {
             final categoryKey = entry.key;
             final categoryName = entry.value;
             final isSelected = _selectedCategoryKey == categoryKey;
@@ -207,7 +186,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                 selected: isSelected,
                 selectedColor: Colors.blueGrey[800],
                 labelStyle: TextStyle(
-                  color: isSelected ? Colors.white : Colors.white,
+                  color: isSelected ? Colors.white : Colors.black, // Correção visual
                   fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                 ),
                 onSelected: (selected) {
@@ -221,17 +200,15 @@ class _CatalogScreenState extends State<CatalogScreen> {
     );
   }
 
-  // Widget para exibir um item do catálogo
   Widget _buildComponentCard(Component component, bool isAdmin) {
     return Card(
       margin: const EdgeInsets.only(bottom: 16.0),
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
-      child: InkWell( // Transforma o Card em clicável
+      child: InkWell(
         borderRadius: BorderRadius.circular(12.0),
-        onTap: isAdmin // Ação de clique (só para admin)
+        onTap: isAdmin
             ? () {
-                // Admin é levado para a tela de edição
                 Navigator.push(
                   context,
                   MaterialPageRoute(
@@ -239,15 +216,13 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   ),
                 );
               }
-            : null, // Cliente não pode clicar
+            : null,
         child: Padding(
           padding: const EdgeInsets.all(12.0),
           child: Row(
             children: [
-              // --- IMAGEM (AGORA CLICÁVEL) ---
               GestureDetector(
                 onTap: () {
-                  // Ação de ZOOM (clicando na imagem)
                   if (component.imageUrl.isNotEmpty) {
                     _showImageDialog(context, component.imageUrl);
                   }
@@ -258,7 +233,6 @@ class _CatalogScreenState extends State<CatalogScreen> {
                     width: 80,
                     height: 80,
                     color: Colors.grey[200],
-                    // Placeholder para a imagem
                     child: component.imageUrl.isNotEmpty
                       ? Image.network(
                           component.imageUrl, 
@@ -269,20 +243,15 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   ),
                 ),
               ),
-              // --- FIM DA IMAGEM ---
 
               const SizedBox(width: 16),
-              // Informações
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       component.name,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 4),
                     Text(
@@ -293,20 +262,14 @@ class _CatalogScreenState extends State<CatalogScreen> {
                     ),
                     const SizedBox(height: 8),
 
-                    // --- PREÇO CONDICIONAL ---
-                    if (isAdmin) // Só mostra o preço se for admin
+                    if (isAdmin)
                       Text(
                         'R\$ ${component.price.toStringAsFixed(2)}',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.blueGrey[800],
-                        ),
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.blueGrey[800]),
                       ),
                   ],
                 ),
               ),
-              // Ícone (só para admin)
               if (isAdmin)
                 Icon(Icons.edit_note_outlined, color: Colors.grey[600]),
             ],

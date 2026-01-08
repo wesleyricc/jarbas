@@ -4,11 +4,11 @@ class Component {
   final String id;
   final String name;
   final String description;
-  final String category;
+  final String category; // Ex: AppConstants.catBlank
   
-  final double supplierPrice; // (NOVO) Preço Tabela Fornecedor
-  final double costPrice;     // Preço de Custo (Calculado com desconto)
-  final double price;         // Preço de Venda (Calculado com margem)
+  final double supplierPrice; 
+  final double costPrice;     
+  final double price;         
   
   final int stock;
   final String imageUrl;
@@ -22,7 +22,7 @@ class Component {
     required this.description,
     required this.category,
     
-    this.supplierPrice = 0.0, // (NOVO)
+    this.supplierPrice = 0.0, 
     this.costPrice = 0.0,
     required this.price,
     
@@ -36,7 +36,6 @@ class Component {
   factory Component.fromFirestore(DocumentSnapshot doc) {
     Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
 
-    // Helper para variações
     Map<String, int> parsedVariations = {};
     if (data['variations'] != null) {
       (data['variations'] as Map<String, dynamic>).forEach((key, value) {
@@ -50,7 +49,7 @@ class Component {
       description: data['description'] ?? '',
       category: data['category'] ?? '',
       
-      supplierPrice: (data['supplierPrice'] ?? 0.0).toDouble(), // (NOVO)
+      supplierPrice: (data['supplierPrice'] ?? 0.0).toDouble(),
       costPrice: (data['costPrice'] ?? 0.0).toDouble(),
       price: (data['price'] ?? 0.0).toDouble(),
       
@@ -68,7 +67,7 @@ class Component {
       'description': description,
       'category': category,
       
-      'supplierPrice': supplierPrice, // (NOVO)
+      'supplierPrice': supplierPrice,
       'costPrice': costPrice,
       'price': price,
       

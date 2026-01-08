@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart'; // Para Timestamp
 import '../models/quote_model.dart';
 
 class QuoteDetailScreen extends StatelessWidget {

@@ -6,13 +6,12 @@ import '../../services/kit_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/user_service.dart';
 import '../../services/whatsapp_service.dart';
+import '../../utils/app_constants.dart'; // Importação das Constantes
 import '../widgets/client_info_step.dart';
 import '../widgets/multi_component_step.dart';
 import '../widgets/customization_step.dart';
 import '../widgets/price_summary_bar.dart';
 import '../widgets/summary_step.dart';
-import '../widgets/passadores_step.dart'; 
-import '../widgets/acessorios_step.dart'; 
 
 class RodBuilderScreen extends StatefulWidget {
   const RodBuilderScreen({super.key});
@@ -61,7 +60,8 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
     }
 
     setState(() => _isLoading = true);
-    bool success = await provider.saveQuote(user.uid, status: 'rascunho');
+    // Usa a constante para Rascunho
+    bool success = await provider.saveQuote(user.uid, status: AppConstants.statusRascunho);
 
     if (mounted) {
       if (success) {
@@ -85,7 +85,8 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
     }
 
     setState(() => _isLoading = true);
-    bool success = await provider.saveQuote(user.uid, status: 'pendente');
+    // Usa a constante para Pendente
+    bool success = await provider.saveQuote(user.uid, status: AppConstants.statusPendente);
 
     if (mounted) {
       if (success) {
@@ -159,7 +160,6 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
                   child: _buildStepContent(_currentStep, isAdmin, provider),
                 ),
               ),
-              // PREÇO TOTAL: Só mostra se for ADMIN
               if (isAdmin) PriceSummaryBar(totalPrice: provider.totalPrice),
               _buildBottomNavigation(isAdmin, provider),
             ],
@@ -236,16 +236,15 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
     );
   }
 
-  // --- WIDGETS DOS PASSOS ---
-
   Widget _getStepWidget(int step, bool isAdmin, RodBuilderProvider provider) {
     switch (step) {
       case 0: return const ClientInfoStep();
-      case 1: return _buildModeSelectionStep(provider, isAdmin); // Passando isAdmin
+      case 1: return _buildModeSelectionStep(provider, isAdmin);
 
       case 2: return MultiComponentStep(
           isAdmin: isAdmin,
-          categoryKey: 'blank',
+          // Usa constante
+          categoryKey: AppConstants.catBlank,
           title: 'Blank',
           emptyMessage: 'Nenhum blank selecionado.',
           emptyIcon: Icons.crop_square,
@@ -257,7 +256,8 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
 
       case 3: return MultiComponentStep(
           isAdmin: isAdmin,
-          categoryKey: 'cabo',
+          // Usa constante
+          categoryKey: AppConstants.catCabo,
           title: 'Cabo',
           emptyMessage: 'Nenhum cabo selecionado.',
           emptyIcon: Icons.grid_goldenratio,
@@ -269,7 +269,8 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
 
       case 4: return MultiComponentStep(
           isAdmin: isAdmin,
-          categoryKey: 'reel_seat',
+          // Usa constante
+          categoryKey: AppConstants.catReelSeat,
           title: 'Reel Seat',
           emptyMessage: 'Nenhum reel seat selecionado.',
           emptyIcon: Icons.chair,
@@ -280,12 +281,18 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
       );
 
       case 5: return MultiComponentStep(
-          isAdmin: isAdmin, categoryKey: 'passadores', title: 'Passador', emptyMessage: 'Nenhum passador selecionado.', emptyIcon: Icons.playlist_add,
+          isAdmin: isAdmin, 
+          // Usa constante
+          categoryKey: AppConstants.catPassadores, 
+          title: 'Passador', emptyMessage: 'Nenhum passador selecionado.', emptyIcon: Icons.playlist_add,
           items: provider.selectedPassadoresList, onAdd: (c, v) => provider.addPassador(c, 1, variation: v),
           onRemove: (i) => provider.removePassador(i), onUpdateQty: (i, q) => provider.updatePassadorQty(i, q));
 
       case 6: return MultiComponentStep(
-          isAdmin: isAdmin, categoryKey: 'acessorios', title: 'Acessório', emptyMessage: 'Nenhum acessório selecionado.', emptyIcon: Icons.extension_outlined,
+          isAdmin: isAdmin, 
+          // Usa constante
+          categoryKey: AppConstants.catAcessorios, 
+          title: 'Acessório', emptyMessage: 'Nenhum acessório selecionado.', emptyIcon: Icons.extension_outlined,
           items: provider.selectedAcessoriosList, onAdd: (c, v) => provider.addAcessorio(c, 1, variation: v),
           onRemove: (i) => provider.removeAcessorio(i), onUpdateQty: (i, q) => provider.updateAcessorioQty(i, q));
       
@@ -294,8 +301,6 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
       default: return const SizedBox.shrink();
     }
   }
-
-  // --- PASSO 1: SELEÇÃO DE MODO E DETALHES DO KIT ---
 
   Widget _buildModeSelectionStep(RodBuilderProvider provider, bool isAdmin) {
     return Column(
@@ -338,7 +343,7 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
                 itemCount: snapshot.data!.length,
                 itemBuilder: (context, index) {
                   final kit = snapshot.data![index];
-                  return _buildKitCard(kit, provider, isAdmin); // Passando isAdmin
+                  return _buildKitCard(kit, provider, isAdmin); 
                 },
               );
             },
@@ -389,8 +394,6 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
             future: _kitService.getKitSummary(kit),
             builder: (context, snapshot) {
               String priceText = '';
-              
-              // Só mostra preço se for admin
               if (isAdmin && snapshot.hasData) {
                 priceText = 'R\$ ${(snapshot.data!['totalPrice'] as double).toStringAsFixed(2)}';
               }
@@ -409,8 +412,6 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
                               ? Image.network(kit.imageUrls.first, fit: BoxFit.cover)
                               : Container(color: Colors.grey[200], child: const Icon(Icons.image_not_supported)),
                         ),
-                        
-                        // Etiqueta de Preço (APENAS PARA ADMIN)
                         if (isAdmin && priceText.isNotEmpty)
                           Positioned(
                             top: 8, right: 8,
@@ -452,8 +453,6 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
       ),
     );
   }
-
-  // --- LÓGICA DE DETALHES DO KIT (MODAL) ---
 
   Future<Map<String, List<String>>> _fetchKitComponentsData(KitModel kit) async {
     Future<List<String>> resolveList(List<Map<String, dynamic>> items) async {

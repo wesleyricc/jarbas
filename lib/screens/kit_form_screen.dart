@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import '../models/kit_model.dart';
 import '../models/component_model.dart';
 import '../services/kit_service.dart';
-import '../services/storage_service.dart'; // Se não tiver upload de imagem, pode remover
+import '../services/storage_service.dart'; 
 import '../widgets/component_selector.dart';
+import '../utils/app_constants.dart'; // Import Constantes
 
 class KitFormScreen extends StatefulWidget {
   final KitModel? kit;
@@ -16,8 +17,6 @@ class KitFormScreen extends StatefulWidget {
 class _KitFormScreenState extends State<KitFormScreen> {
   final _formKey = GlobalKey<FormState>();
   final KitService _kitService = KitService();
-  
-  // Se você não tiver o StorageService implementado, pode comentar as partes de imagem
   final StorageService _storageService = StorageService(); 
 
   final TextEditingController _nameController = TextEditingController();
@@ -64,7 +63,6 @@ class _KitFormScreenState extends State<KitFormScreen> {
     setState(() => _isLoading = false);
   }
 
-  // --- CORREÇÃO AQUI ---
   void _openSelector(String category, Function(Component, String?) onSelect) {
     showModalBottomSheet(
       context: context,
@@ -85,7 +83,8 @@ class _KitFormScreenState extends State<KitFormScreen> {
               Container(width: 40, height: 5, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10))),
               Padding(
                 padding: const EdgeInsets.all(16.0),
-                child: Text("Selecionar $category", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                // Exibe o nome amigável da categoria (ex: "Reel Seats") em vez da chave ("reel_seat")
+                child: Text("Selecionar ${AppConstants.categoryLabels[category] ?? category}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
               ),
               const Divider(height: 1),
               
@@ -93,12 +92,8 @@ class _KitFormScreenState extends State<KitFormScreen> {
                 child: ComponentSelector(
                   category: category,
                   isAdmin: true,
-                  // REMOVIDO: selectedComponent: null
-                  
-                  // ADICIONADO: Lógica de Multi Seleção
                   onMultiSelectConfirm: (selectedList) {
                     for (var item in selectedList) {
-                      // Chama a função onSelect para cada item retornado
                       onSelect(item['comp'], item['var']);
                     }
                     Navigator.pop(context);
@@ -113,7 +108,6 @@ class _KitFormScreenState extends State<KitFormScreen> {
   }
 
   Future<void> _pickImage() async {
-    // Se não tiver StorageService, remova este bloco ou adapte
     try {
       final res = await _storageService.pickImageForPreview();
       if (res != null) {
@@ -138,7 +132,6 @@ class _KitFormScreenState extends State<KitFormScreen> {
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     
-    // Validação mínima: Kit precisa ter ao menos o básico
     if (_selBlanks.isEmpty || _selCabos.isEmpty || _selReelSeats.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Adicione pelo menos 1 Blank, 1 Cabo e 1 Reel Seat.')));
       return;
@@ -221,16 +214,16 @@ class _KitFormScreenState extends State<KitFormScreen> {
               const Text("Componentes do Kit", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.blueGrey)),
               const SizedBox(height: 16),
 
-              // SEÇÕES DE LISTA
-              _buildListSection('Blanks', 'blank', _selBlanks),
+              // SEÇÕES DE LISTA (USANDO CONSTANTES)
+              _buildListSection('Blanks', AppConstants.catBlank, _selBlanks),
               const SizedBox(height: 24),
-              _buildListSection('Cabos', 'cabo', _selCabos),
+              _buildListSection('Cabos', AppConstants.catCabo, _selCabos),
               const SizedBox(height: 24),
-              _buildListSection('Reel Seats', 'reel_seat', _selReelSeats),
+              _buildListSection('Reel Seats', AppConstants.catReelSeat, _selReelSeats),
               const SizedBox(height: 24),
-              _buildListSection('Passadores', 'passadores', _selPassadores),
+              _buildListSection('Passadores', AppConstants.catPassadores, _selPassadores),
               const SizedBox(height: 24),
-              _buildListSection('Acessórios', 'acessorios', _selAcessorios),
+              _buildListSection('Acessórios', AppConstants.catAcessorios, _selAcessorios),
 
               const SizedBox(height: 48),
               SizedBox(
@@ -260,7 +253,6 @@ class _KitFormScreenState extends State<KitFormScreen> {
             TextButton.icon(
               icon: const Icon(Icons.add, color: Colors.blueGrey),
               label: const Text("Adicionar", style: TextStyle(color: Colors.blueGrey, fontWeight: FontWeight.bold)),
-              // Passa a função que adiciona UM item na lista local
               onPressed: () => _openSelector(cat, (c, v) => setState(() => list.add({'comp': c, 'var': v, 'qty': 1})))
             ),
           ],

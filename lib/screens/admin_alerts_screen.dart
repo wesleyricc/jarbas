@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/component_model.dart';
 import '../services/component_service.dart';
+import '../utils/app_constants.dart'; // Import Constants
 import 'component_form_screen.dart';
 
 class AdminAlertsScreen extends StatefulWidget {
@@ -16,21 +17,12 @@ class _AdminAlertsScreenState extends State<AdminAlertsScreen> {
   // Estado do Filtro (null = Todos)
   String? _selectedCategory;
 
-  // Mapa de categorias para os Chips
-  final Map<String, String> _categoriesMap = {
-    'blank': 'Blank',
-    'cabo': 'Cabo',
-    'reel_seat': 'Reel Seat',
-    'passadores': 'Passadores',
-    'acessorios': 'Acessórios',
-  };
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Alertas de Estoque'),
-        backgroundColor: Colors.amber[700], // Cor de alerta
+        backgroundColor: Colors.amber[700], 
         foregroundColor: Colors.white,
       ),
       body: Column(
@@ -52,17 +44,14 @@ class _AdminAlertsScreenState extends State<AdminAlertsScreen> {
                   return const Center(child: CircularProgressIndicator());
                 }
                 
-                // Dados brutos do Firebase (Todos com estoque baixo)
                 List<Component> allLowStock = snapshot.data ?? [];
 
                 // --- LÓGICA DE FILTRAGEM LOCAL ---
-                // Filtra a lista baseada na categoria selecionada
                 final filteredList = allLowStock.where((comp) {
-                  if (_selectedCategory == null) return true; // Mostra tudo
+                  if (_selectedCategory == null) return true; 
                   return comp.category == _selectedCategory;
                 }).toList();
 
-                // Verifica se a lista (filtrada ou total) está vazia
                 if (filteredList.isEmpty) {
                   return Center(
                     child: Column(
@@ -77,7 +66,7 @@ class _AdminAlertsScreenState extends State<AdminAlertsScreen> {
                         Text(
                           _selectedCategory == null 
                               ? 'Estoque saudável!' 
-                              : 'Nenhum alerta em "${_categoriesMap[_selectedCategory]}"',
+                              : 'Nenhum alerta em "${AppConstants.categoryLabels[_selectedCategory] ?? 'Categoria'}"',
                           style: TextStyle(fontSize: 16, color: Colors.grey[600]),
                         ),
                       ],
@@ -85,7 +74,6 @@ class _AdminAlertsScreenState extends State<AdminAlertsScreen> {
                   );
                 }
 
-                // Ordena alfabeticamente
                 filteredList.sort((a, b) => a.name.compareTo(b.name));
 
                 return ListView.builder(
@@ -116,8 +104,8 @@ class _AdminAlertsScreenState extends State<AdminAlertsScreen> {
           // Botão "Todos"
           _buildChoiceChip(label: 'Todos', key: null),
           
-          // Categorias do Mapa
-          ..._categoriesMap.entries.map((entry) {
+          // Categorias via Constantes
+          ...AppConstants.categoryLabels.entries.map((entry) {
             return _buildChoiceChip(label: entry.value, key: entry.key);
           }),
         ],
@@ -132,7 +120,7 @@ class _AdminAlertsScreenState extends State<AdminAlertsScreen> {
       child: ChoiceChip(
         label: Text(label),
         selected: isSelected,
-        selectedColor: Colors.amber[100], // Fundo selecionado (tom de alerta suave)
+        selectedColor: Colors.amber[100],
         backgroundColor: Colors.grey[100],
         labelStyle: TextStyle(
           color: isSelected ? Colors.brown[900] : Colors.black87,
@@ -169,7 +157,6 @@ class _AdminAlertsScreenState extends State<AdminAlertsScreen> {
         ),
         trailing: TextButton(
           onPressed: () {
-            // Vai para a tela de edição para repor estoque
             Navigator.push(context, MaterialPageRoute(builder: (c) => ComponentFormScreen(component: comp)));
           },
           style: TextButton.styleFrom(foregroundColor: Colors.blueGrey),
@@ -182,7 +169,6 @@ class _AdminAlertsScreenState extends State<AdminAlertsScreen> {
   String _getVariationStockText(Component c) {
     if (c.variations.isEmpty) return 'Item único';
     
-    // Filtra variações com estoque baixo (< 3)
     final lowVars = c.variations.entries
         .where((e) => e.value < 3)
         .map((e) => "${e.key}: ${e.value}")

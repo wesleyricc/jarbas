@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import '../../../models/component_model.dart';
 import '../../../services/component_service.dart';
 import '../../../services/config_service.dart';
+import '../../../utils/app_constants.dart'; // Import Constants
 
 class AdminMassUpdateScreen extends StatefulWidget {
   const AdminMassUpdateScreen({super.key});
@@ -25,18 +26,9 @@ class _AdminMassUpdateScreenState extends State<AdminMassUpdateScreen> {
   List<Component> _currentFilteredList = [];
 
   double _defaultMargin = 0.0;
-  double _supplierDiscount = 0.0; // (NOVO)
+  double _supplierDiscount = 0.0;
   
   bool _isLoading = false;
-
-  final Map<String, String> _categoriesMap = {
-    'todos': 'Todas as Categorias',
-    'blank': 'Blanks',
-    'cabo': 'Cabos',
-    'passadores': 'Passadores',
-    'reel_seat': 'Reel Seats',
-    'acessorios': 'Acessórios',
-  };
 
   @override
   void initState() {
@@ -52,7 +44,7 @@ class _AdminMassUpdateScreenState extends State<AdminMassUpdateScreen> {
     if (mounted) {
       setState(() {
         _defaultMargin = (settings['defaultMargin'] ?? 0.0).toDouble();
-        _supplierDiscount = (settings['supplierDiscount'] ?? 0.0).toDouble(); // (NOVO)
+        _supplierDiscount = (settings['supplierDiscount'] ?? 0.0).toDouble();
       });
     }
   }
@@ -85,10 +77,6 @@ class _AdminMassUpdateScreenState extends State<AdminMassUpdateScreen> {
     
     if (percent == 0) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Informe um percentual diferente de zero.')));
-      return;
-    }
-    if (percent <= -100) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('A redução não pode ser de 100% ou mais.')));
       return;
     }
     
@@ -133,7 +121,7 @@ class _AdminMassUpdateScreenState extends State<AdminMassUpdateScreen> {
           componentsToUpdate: toUpdate.map((c) => c.id).toList(),
           increasePercent: percent,
           currentMargin: _defaultMargin,
-          supplierDiscount: _supplierDiscount, // (NOVO) Passa o desconto
+          supplierDiscount: _supplierDiscount,
         );
 
         if (mounted) {
@@ -207,7 +195,10 @@ class _AdminMassUpdateScreenState extends State<AdminMassUpdateScreen> {
                             value: _selectedCategoryKey,
                             decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12)),
                             isExpanded: true,
-                            items: _categoriesMap.entries.map((e) => DropdownMenuItem(value: e.key, child: Text(e.value, style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis))).toList(),
+                            items: [
+                              const DropdownMenuItem(value: 'todos', child: Text('Todas as Categorias')),
+                              ...AppConstants.categoryLabels.entries.map((e) => DropdownMenuItem(value: e.key, child: Text(e.value, overflow: TextOverflow.ellipsis))).toList(),
+                            ],
                             onChanged: (v) => setState(() {
                               _selectedCategoryKey = v!;
                               _selectedIds.clear();
@@ -289,7 +280,6 @@ class _AdminMassUpdateScreenState extends State<AdminMassUpdateScreen> {
                             value: isSelected,
                             onChanged: (_) => _toggleItem(comp.id),
                             title: Text(comp.name, style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14)),
-                            // --- CORREÇÃO VISUAL AQUI ---
                             subtitle: Padding(
                               padding: const EdgeInsets.only(top: 4.0),
                               child: Row(
@@ -301,12 +291,11 @@ class _AdminMassUpdateScreenState extends State<AdminMassUpdateScreen> {
                                 ],
                               ),
                             ),
-                            // -----------------------------
                             secondary: comp.imageUrl.isNotEmpty 
                                 ? ClipRRect(borderRadius: BorderRadius.circular(4), child: Image.network(comp.imageUrl, width: 40, height: 40, fit: BoxFit.cover))
                                 : const Icon(Icons.image, color: Colors.grey),
                             activeColor: Colors.orange[800],
-                            dense: false, // Aumentei um pouco a altura para caber os preços
+                            dense: false, 
                           );
                         },
                       );
@@ -319,7 +308,6 @@ class _AdminMassUpdateScreenState extends State<AdminMassUpdateScreen> {
     );
   }
 
-  // Helper para as etiquetas de preço
   Widget _priceTag(String label, double value, Color color) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

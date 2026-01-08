@@ -1,9 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../utils/app_constants.dart';
 
 class Quote {
   final String? id;
   final String userId;
-  final String status; // 'pendente', 'rascunho', 'aprovado', 'producao', 'concluido'
+  final String status; // Usa as constantes de AppConstants
   final Timestamp createdAt;
   
   // Dados do Cliente
@@ -12,8 +13,7 @@ class Quote {
   final String clientCity;
   final String clientState;
 
-  // Listas de Componentes (TUDO AGORA É LISTA)
-  // Estrutura do Map: {'name': String, 'variation': String?, 'quantity': int, 'cost': double}
+  // Listas de Componentes
   final List<Map<String, dynamic>> blanksList;
   final List<Map<String, dynamic>> cabosList;
   final List<Map<String, dynamic>> reelSeatsList;
@@ -21,7 +21,7 @@ class Quote {
   final List<Map<String, dynamic>> acessoriosList;
 
   // Custos e Totais
-  final double extraLaborCost; // NOVO: Mão de obra extra
+  final double extraLaborCost; 
   final double totalPrice;
 
   // Personalização
@@ -52,14 +52,14 @@ class Quote {
     return Quote(
       id: doc.id,
       userId: data['userId'] ?? '',
-      status: data['status'] ?? 'pendente',
+      // Fallback seguro usando a constante
+      status: data['status'] ?? AppConstants.statusPendente,
       createdAt: data['createdAt'] ?? Timestamp.now(),
       clientName: data['clientName'] ?? '',
       clientPhone: data['clientPhone'] ?? '',
       clientCity: data['clientCity'] ?? '',
       clientState: data['clientState'] ?? '',
       
-      // Carrega listas (se não existir, lista vazia)
       blanksList: List<Map<String, dynamic>>.from(data['blanksList'] ?? []),
       cabosList: List<Map<String, dynamic>>.from(data['cabosList'] ?? []),
       reelSeatsList: List<Map<String, dynamic>>.from(data['reelSeatsList'] ?? []),

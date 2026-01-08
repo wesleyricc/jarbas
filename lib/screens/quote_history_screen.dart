@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../models/quote_model.dart';
 import '../../services/quote_service.dart';
 import '../../services/auth_service.dart';
+import '../../utils/app_constants.dart'; // Import Constantes
 import 'quote_detail_screen.dart'; 
 
 class QuoteHistoryScreen extends StatefulWidget {
@@ -48,14 +49,14 @@ class _QuoteHistoryScreenState extends State<QuoteHistoryScreen> {
 
                 List<Quote> allQuotes = snapshot.data!;
 
-                // --- FILTRO: APENAS RASCUNHOS ---
-                final quotes = allQuotes.where((q) => q.status == 'rascunho').toList();
+                // --- FILTRO: APENAS RASCUNHOS (USANDO CONSTANTE) ---
+                final quotes = allQuotes.where((q) => q.status == AppConstants.statusRascunho).toList();
 
                 if (quotes.isEmpty) {
                    return const Center(child: Text('Nenhum rascunho pendente.'));
                 }
 
-                // Ordena por data
+                // Ordena por data (mais recente primeiro)
                 quotes.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
                 return ListView.builder(
@@ -84,21 +85,18 @@ class _QuoteHistoryScreenState extends State<QuoteHistoryScreen> {
         subtitle: Text(
           'Status: ${quote.status.toUpperCase()}',
           style: TextStyle(
-            color: Colors.grey[400], // Cor neutra para rascunho
+            color: Colors.grey[400],
             fontWeight: FontWeight.bold,
           ),
         ),
         trailing: Icon(
-          Icons.edit, // Ícone de edição para indicar que é um rascunho
+          Icons.edit, 
           color: Colors.grey[500],
         ),
         onTap: () {
           Navigator.push(
             context,
             MaterialPageRoute(
-              // Nota: Se for admin, pode querer redirecionar para o AdminQuoteDetailScreen 
-              // para ter poder de edição total, ou manter o QuoteDetailScreen se for apenas visualização.
-              // Como é "Meus Rascunhos", geralmente queremos editar.
               builder: (context) => QuoteDetailScreen(quote: quote),
             ),
           );

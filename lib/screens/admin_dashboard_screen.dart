@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../models/quote_model.dart';
 import '../services/quote_service.dart';
+import '../utils/app_constants.dart';
+import '../utils/financial_helper.dart'; // Import Helper
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -11,7 +13,14 @@ class AdminDashboardScreen extends StatefulWidget {
 
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   final QuoteService _quoteService = QuoteService();
-  final List<String> _activeStatuses = ['aprovado', 'producao', 'concluido'];
+  
+  // Lista de status que contam como venda realizada
+  final List<String> _activeStatuses = [
+    AppConstants.statusAprovado,
+    AppConstants.statusProducao,
+    AppConstants.statusConcluido,
+    AppConstants.statusEnviado
+  ];
 
   late int _selectedMonth;
   late int _selectedYear;
@@ -35,7 +44,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[50], // Fundo padrão suave
+      backgroundColor: Colors.grey[50],
       body: StreamBuilder<List<Quote>>(
         stream: _quoteService.getAllQuotesStream(),
         builder: (context, snapshot) {
@@ -123,14 +132,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
+  // ... Widgets de UI (KPI Card, Filters, Charts) permanecem iguais ...
+  // Incluirei apenas o método de cálculo refatorado abaixo:
+
   Widget _buildSectionTitle(String title) {
     return Text(
       title.toUpperCase(), 
       style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.blueGrey[800], letterSpacing: 0.5)
     );
   }
-
-  // --- WIDGETS ---
 
   Widget _buildFiltersCard() {
     return Card(
@@ -397,7 +407,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  // --- LÓGICA DE CÁLCULO ---
+  // --- LÓGICA DE CÁLCULO REFATORADA ---
 
   DashboardData _calculatePeriodData(List<Quote> allQuotes, int month, int year) {
     double revenue = 0;
@@ -411,14 +421,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     });
 
     for (var quote in periodQuotes) {
-      revenue += quote.totalPrice;
-      double cost = 0;
+      // USAMOS O HELPER AQUI
+      final metrics = FinancialHelper.calculateQuoteMetrics(quote);
       
+      revenue += metrics.totalRevenue;
+      profit += metrics.grossProfit;
+
+      // Logica de Top Items (mantida manual pois depende da contagem)
       void processList(List<Map<String, dynamic>> items) {
         for (var item in items) {
-          double itemCost = (item['cost'] ?? 0.0).toDouble();
           int qty = ((item['quantity'] ?? 1) as num).toInt();
-          cost += itemCost * qty;
           String name = item['name'] ?? '';
           if (name.isNotEmpty) {
             components[name] = (components[name] ?? 0) + qty;
@@ -431,8 +443,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       processList(quote.reelSeatsList);
       processList(quote.passadoresList);
       processList(quote.acessoriosList);
-      
-      profit += (quote.totalPrice - cost);
     }
 
     var sortedComponents = components.entries.toList()..sort((a, b) => b.value.compareTo(a.value));

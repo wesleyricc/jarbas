@@ -1,17 +1,22 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/quote_model.dart';
+import '../utils/app_constants.dart';
 
 class QuoteService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   late final CollectionReference _quotesCollection;
   late final CollectionReference _componentsCollection;
 
-  // Status que ativam a baixa de estoque
-  final List<String> _stockConsumingStatuses = ['aprovado', 'producao', 'concluido'];
+  // Status que ativam a baixa de estoque (Usando constantes para segurança)
+  final List<String> _stockConsumingStatuses = [
+    AppConstants.statusAprovado,
+    AppConstants.statusProducao,
+    AppConstants.statusConcluido
+  ];
 
   QuoteService() {
-    _quotesCollection = _firestore.collection('quotes');
-    _componentsCollection = _firestore.collection('components');
+    _quotesCollection = _firestore.collection(AppConstants.colQuotes);
+    _componentsCollection = _firestore.collection(AppConstants.colComponents);
   }
 
   // --- LEITURA ---
@@ -67,8 +72,7 @@ class QuoteService {
 
       // 2. APLICAR NOVO ESTOQUE SE NECESSÁRIO
       if (willConsume) {
-        // Precisamos reconstruir um objeto Quote temporário com os dados novos para iterar as listas corretamente.
-        // Helper para mesclar listas: se vier no newData, usa ele; senão, usa o antigo.
+        // Helper para mesclar listas
         List<Map<String, dynamic>> getList(String key, List<Map<String, dynamic>> oldList) {
           if (newData.containsKey(key)) {
             return List<Map<String, dynamic>>.from(newData[key]);
@@ -80,10 +84,9 @@ class QuoteService {
           userId: oldQuote.userId,
           status: newStatus,
           createdAt: oldQuote.createdAt,
-          totalPrice: 0, // Irrelevante para estoque
+          totalPrice: 0,
           clientName: '', clientPhone: '', clientCity: '', clientState: '',
           extraLaborCost: 0,
-          // Listas Mescladas
           blanksList: getList('blanksList', oldQuote.blanksList),
           cabosList: getList('cabosList', oldQuote.cabosList),
           reelSeatsList: getList('reelSeatsList', oldQuote.reelSeatsList),
@@ -124,7 +127,6 @@ class QuoteService {
       if (name == null || name.isEmpty || qty <= 0) return;
 
       try {
-        // Busca componente por nome (Idealmente seria ID, mas mantendo compatibilidade com estrutura atual)
         final querySnap = await _componentsCollection.where('name', isEqualTo: name).limit(1).get();
         if (querySnap.docs.isEmpty) return;
 
@@ -155,26 +157,14 @@ class QuoteService {
           t.update(docRef, {'stock': newStock});
         }
       } catch (e) {
-        // Log de erro silencioso para não quebrar a transação inteira se um item falhar
         print("Erro ao atualizar estoque: $e");
       }
     }
 
-    // Processa TODAS as listas
-    for (var item in quote.blanksList) {
-      await updateItem(item['name'], item['variation'], (item['quantity'] ?? 1).toInt());
-    }
-    for (var item in quote.cabosList) {
-      await updateItem(item['name'], item['variation'], (item['quantity'] ?? 1).toInt());
-    }
-    for (var item in quote.reelSeatsList) {
-      await updateItem(item['name'], item['variation'], (item['quantity'] ?? 1).toInt());
-    }
-    for (var item in quote.passadoresList) {
-      await updateItem(item['name'], item['variation'], (item['quantity'] ?? 1).toInt());
-    }
-    for (var item in quote.acessoriosList) {
-      await updateItem(item['name'], item['variation'], (item['quantity'] ?? 1).toInt());
-    }
+    for (var item in quote.blanksList) await updateItem(item['name'], item['variation'], (item['quantity'] ?? 1).toInt());
+    for (var item in quote.cabosList) await updateItem(item['name'], item['variation'], (item['quantity'] ?? 1).toInt());
+    for (var item in quote.reelSeatsList) await updateItem(item['name'], item['variation'], (item['quantity'] ?? 1).toInt());
+    for (var item in quote.passadoresList) await updateItem(item['name'], item['variation'], (item['quantity'] ?? 1).toInt());
+    for (var item in quote.acessoriosList) await updateItem(item['name'], item['variation'], (item['quantity'] ?? 1).toInt());
   }
 }

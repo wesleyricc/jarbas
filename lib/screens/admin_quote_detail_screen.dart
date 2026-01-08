@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/quote_model.dart';
-import '../models/component_model.dart'; // Necessário para Component
+import '../models/component_model.dart';
 import '../providers/rod_builder_provider.dart';
 import '../services/quote_service.dart';
 import '../services/whatsapp_service.dart';
+import '../utils/app_constants.dart'; // Import Constants
 import '../widgets/multi_component_step.dart';
 
 class AdminQuoteDetailScreen extends StatefulWidget {
@@ -20,13 +21,21 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
   bool _isLoading = false;
   late String _currentStatus;
 
-  final List<String> _statusOptions = ['pendente', 'aprovado', 'producao', 'concluido', 'enviado', 'rascunho', 'cancelado'];
+  // Usa as constantes para as opções
+  final List<String> _statusOptions = [
+    AppConstants.statusPendente,
+    AppConstants.statusAprovado,
+    AppConstants.statusProducao,
+    AppConstants.statusConcluido,
+    AppConstants.statusEnviado,
+    AppConstants.statusRascunho,
+    AppConstants.statusCancelado
+  ];
 
   @override
   void initState() {
     super.initState();
     _currentStatus = widget.quote.status;
-    // Carrega os dados do orçamento no Provider para permitir edição
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadQuoteIntoProvider();
     });
@@ -44,8 +53,6 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
 
     final provider = context.read<RodBuilderProvider>();
     
-    // Recria o objeto Quote com os dados atuais do Provider
-    // Nota: Estamos usando o ID original para atualizar
     List<Map<String, dynamic>> convertList(List<RodItem> list) {
       return list.map((item) => {
         'name': item.component.name,
@@ -90,16 +97,7 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
   Future<void> _sendWhatsApp() async {
     final provider = context.read<RodBuilderProvider>();
     try {
-      // Usa o método existente que formata o texto bonitinho
-      // Como o método do Service lança a URL com o número do ADMIN,
-      // aqui precisamos de uma lógica levemente diferente: Enviar PARA O CLIENTE.
-      // Vou adaptar a chamada aqui mesmo.
-      
       await WhatsAppService.sendNewQuoteRequest(provider: provider);
-      // OBS: O WhatsAppService atual manda msg PARA O ADMIN.
-      // Se a intenção é o Admin mandar PARA O CLIENTE, o ideal seria alterar o serviço
-      // ou abrir o link diretamente aqui usando o provider.clientPhone.
-      
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Erro ao abrir WhatsApp')));
     }
@@ -127,25 +125,20 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // 1. STATUS E CLIENTE
                 _buildHeaderCard(provider),
                 const SizedBox(height: 24),
 
                 const Text("Editar Componentes", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blueGrey)),
                 const SizedBox(height: 16),
 
-                // 2. COMPONENTES (EDITÁVEIS)
-                // Usando o MultiComponentStep para permitir adicionar/remover
                 _buildEditSection(provider),
                 
                 const SizedBox(height: 32),
 
-                // 3. PERSONALIZAÇÃO E MÃO DE OBRA
                 _buildCustomizationCard(provider),
                 
                 const SizedBox(height: 32),
 
-                // 4. TABELA FINANCEIRA DETALHADA
                 _buildFinancialAnalysis(provider),
 
                 const SizedBox(height: 40),
@@ -182,13 +175,17 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
                     isExpanded: true,
                     isDense: true,
                     underline: Container(height: 1, color: Colors.blueGrey),
-                    items: _statusOptions.map((s) => DropdownMenuItem(
-                      value: s, 
-                      child: Text(s.toUpperCase(), style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: s == 'aprovado' ? Colors.green : (s == 'cancelado' ? Colors.red : Colors.black87)
-                      ))
-                    )).toList(),
+                    items: _statusOptions.map((s) {
+                      // Pega a cor do mapa de constantes
+                      Color color = AppConstants.statusColors[s] ?? Colors.black;
+                      return DropdownMenuItem(
+                        value: s, 
+                        child: Text(s.toUpperCase(), style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: color
+                        ))
+                      );
+                    }).toList(),
                     onChanged: (val) {
                       if (val != null) setState(() => _currentStatus = val);
                     },
@@ -215,7 +212,6 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
   }
 
   Widget _buildEditSection(RodBuilderProvider provider) {
-    // Helper para reduzir código repetitivo
     Widget buildStep(String title, String key, IconData icon, List<RodItem> items, 
         Function(Component, String?) add, Function(int) remove, Function(int, int) upd) {
       return Padding(
@@ -236,19 +232,19 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
 
     return Column(
       children: [
-        buildStep('Blank', 'blank', Icons.crop_square, provider.selectedBlanksList, 
+        buildStep('Blank', AppConstants.catBlank, Icons.crop_square, provider.selectedBlanksList, 
             (c,v)=>provider.addBlank(c,1,variation:v), (i)=>provider.removeBlank(i), (i,q)=>provider.updateBlankQty(i,q)),
         
-        buildStep('Cabo', 'cabo', Icons.grid_goldenratio, provider.selectedCabosList, 
+        buildStep('Cabo', AppConstants.catCabo, Icons.grid_goldenratio, provider.selectedCabosList, 
             (c,v)=>provider.addCabo(c,1,variation:v), (i)=>provider.removeCabo(i), (i,q)=>provider.updateCaboQty(i,q)),
         
-        buildStep('Reel Seat', 'reel_seat', Icons.chair, provider.selectedReelSeatsList, 
+        buildStep('Reel Seat', AppConstants.catReelSeat, Icons.chair, provider.selectedReelSeatsList, 
             (c,v)=>provider.addReelSeat(c,1,variation:v), (i)=>provider.removeReelSeat(i), (i,q)=>provider.updateReelSeatQty(i,q)),
         
-        buildStep('Passador', 'passadores', Icons.format_list_bulleted, provider.selectedPassadoresList, 
+        buildStep('Passador', AppConstants.catPassadores, Icons.format_list_bulleted, provider.selectedPassadoresList, 
             (c,v)=>provider.addPassador(c,1,variation:v), (i)=>provider.removePassador(i), (i,q)=>provider.updatePassadorQty(i,q)),
         
-        buildStep('Acessório', 'acessorios', Icons.extension, provider.selectedAcessoriosList, 
+        buildStep('Acessório', AppConstants.catAcessorios, Icons.extension, provider.selectedAcessoriosList, 
             (c,v)=>provider.addAcessorio(c,1,variation:v), (i)=>provider.removeAcessorio(i), (i,q)=>provider.updateAcessorioQty(i,q)),
       ],
     );
@@ -287,10 +283,7 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
     );
   }
 
-  // --- TABELA FINANCEIRA (Reutilizando lógica do SummaryStep) ---
   Widget _buildFinancialAnalysis(RodBuilderProvider provider) {
-    
-    // Cálculos
     double sumCost(List<RodItem> list) => list.fold(0.0, (sum, item) => sum + (item.component.costPrice * item.quantity));
     
     double totalCostPrice = 0.0;
@@ -323,7 +316,6 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
           ),
           const Divider(height: 24),
           
-          // Grupos Detalhados
           _buildDetailedFinancialGroup('Blanks', provider.selectedBlanksList),
           _buildDetailedFinancialGroup('Cabos', provider.selectedCabosList),
           _buildDetailedFinancialGroup('Reel Seats', provider.selectedReelSeatsList),
@@ -334,7 +326,6 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
           const Divider(thickness: 2),
           const SizedBox(height: 16),
 
-          // Totais
            _buildSummaryRow("Receita Bruta:", provider.totalPrice, isBold: false),
            _buildSummaryRow("Custo Total Peças:", totalCostPrice, isNegative: true),
            if(provider.extraLaborCost > 0)
@@ -364,7 +355,6 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
     );
   }
 
-  // Helper de Linha Financeira Detalhada (Igual ao SummaryStep novo)
   Widget _buildDetailedFinancialGroup(String categoryName, List<RodItem> items) {
     if (items.isEmpty) return const SizedBox.shrink();
 
@@ -399,7 +389,6 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Custo
                     Expanded(
                       flex: 3,
                       child: Column(
@@ -413,7 +402,6 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
                     ),
                     Container(width: 1, height: 24, color: Colors.grey[300]),
                     const SizedBox(width: 8),
-                    // Venda
                     Expanded(
                       flex: 3,
                       child: Column(
@@ -425,7 +413,6 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
                         ],
                       ),
                     ),
-                    // Resultado
                     Expanded(
                       flex: 3,
                       child: Container(

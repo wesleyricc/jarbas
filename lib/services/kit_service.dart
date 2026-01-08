@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/kit_model.dart';
 import '../models/component_model.dart';
+import '../utils/app_constants.dart';
 
 class KitService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -8,8 +9,8 @@ class KitService {
   late final CollectionReference _componentsCollection;
 
   KitService() {
-    _kitsCollection = _firestore.collection('kits');
-    _componentsCollection = _firestore.collection('components');
+    _kitsCollection = _firestore.collection(AppConstants.colKits);
+    _componentsCollection = _firestore.collection(AppConstants.colComponents);
   }
 
   Stream<List<KitModel>> getKitsStream() {
@@ -45,7 +46,6 @@ class KitService {
     return null;
   }
 
-  // Calcula preço total e verifica estoque considerando TUDO como lista
   Future<Map<String, dynamic>> getKitSummary(KitModel kit) async {
     double total = 0.0;
     bool available = true;
@@ -59,7 +59,6 @@ class KitService {
       }
     }
 
-    // Itera sobre todas as listas
     for (var item in kit.blanksIds) await checkItem(item['id'], (item['quantity'] ?? 1).toInt());
     for (var item in kit.cabosIds) await checkItem(item['id'], (item['quantity'] ?? 1).toInt());
     for (var item in kit.reelSeatsIds) await checkItem(item['id'], (item['quantity'] ?? 1).toInt());

@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import '../models/quote_model.dart';
 import '../services/quote_service.dart';
+import '../utils/app_constants.dart'; // Import Constants
 import 'admin_quote_detail_screen.dart';
-import 'rod_builder_screen.dart'; // <--- Import para criar novo orçamento
+import 'rod_builder_screen.dart'; 
 
 class AdminQuotesScreen extends StatefulWidget {
   const AdminQuotesScreen({super.key});
@@ -70,7 +71,7 @@ class _AdminQuotesScreenState extends State<AdminQuotesScreen> with SingleTicker
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[50], // Padronização
+      backgroundColor: Colors.grey[50],
       body: Column(
         children: [
           Container(
@@ -98,8 +99,9 @@ class _AdminQuotesScreenState extends State<AdminQuotesScreen> with SingleTicker
                 }
 
                 final allQuotes = snapshot.data!;
-                final submittedQuotes = allQuotes.where((q) => q.status != 'rascunho').toList();
-                final draftQuotes = allQuotes.where((q) => q.status == 'rascunho').toList();
+                // Filtro usando Constantes
+                final submittedQuotes = allQuotes.where((q) => q.status != AppConstants.statusRascunho).toList();
+                final draftQuotes = allQuotes.where((q) => q.status == AppConstants.statusRascunho).toList();
 
                 return TabBarView(
                   controller: _tabController,
@@ -113,7 +115,6 @@ class _AdminQuotesScreenState extends State<AdminQuotesScreen> with SingleTicker
           ),
         ],
       ),
-      // --- NOVO: Botão para Criar Orçamento (Admin) ---
       floatingActionButton: FloatingActionButton(
         onPressed: () {
           Navigator.push(context, MaterialPageRoute(builder: (_) => const RodBuilderScreen()));
@@ -187,16 +188,8 @@ class _AdminQuotesScreenState extends State<AdminQuotesScreen> with SingleTicker
   }
 
   Widget _buildStatusBadge(String status) {
-    Color color;
-    switch (status.toLowerCase()) {
-      case 'pendente': color = Colors.orange; break;
-      case 'aprovado': color = Colors.blue; break;
-      case 'producao': color = Colors.purple; break;
-      case 'concluido': color = Colors.green; break;
-      case 'rascunho': color = Colors.grey; break;
-      case 'cancelado': color = Colors.red; break;
-      default: color = Colors.blueGrey;
-    }
+    // Busca cor da constante ou usa fallback
+    Color color = AppConstants.statusColors[status] ?? Colors.blueGrey;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),

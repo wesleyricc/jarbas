@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../models/user_model.dart';
 import '../../../services/user_service.dart';
+import '../../../utils/app_constants.dart'; // Import Constantes
 import 'admin_user_edit_screen.dart';
 
 class AdminUsersScreen extends StatefulWidget {
@@ -108,12 +109,13 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     String displayName = user.displayName.isNotEmpty ? user.displayName : user.email;
     if (displayName.isEmpty) displayName = "Usuário Anônimo";
 
-    // Define a cor da função
+    // Define a cor da função usando as constantes e helper
     Color roleColor = Colors.grey[600]!;
-    if (user.role == 'fabricante' || user.role == 'lojista') {
-      roleColor = Colors.red[700]!;
-    } else if (user.role == 'cliente') {
-      roleColor = Colors.blueGrey[700]!;
+    
+    if (AppConstants.isAdmin(user.role)) {
+      roleColor = Colors.red[700]!; // Admins em vermelho
+    } else if (user.role == AppConstants.roleCliente) {
+      roleColor = Colors.blueGrey[700]!; // Clientes em azul
     }
 
     return Card(
@@ -130,7 +132,6 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
         ),
         trailing: const Icon(Icons.edit_note_outlined),
         onTap: () {
-          // Navega para a tela de edição
           Navigator.push(
             context,
             MaterialPageRoute(
