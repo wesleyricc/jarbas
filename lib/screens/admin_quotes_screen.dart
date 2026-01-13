@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/quote_model.dart';
 import '../services/quote_service.dart';
-import '../utils/app_constants.dart'; // Import Constants
+import '../utils/app_constants.dart';
 import 'admin_quote_detail_screen.dart';
 import 'rod_builder_screen.dart'; 
 
@@ -19,7 +19,8 @@ class _AdminQuotesScreenState extends State<AdminQuotesScreen> with SingleTicker
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    // Agora são 5 abas
+    _tabController = TabController(length: 5, vsync: this);
   }
 
   @override
@@ -81,9 +82,13 @@ class _AdminQuotesScreenState extends State<AdminQuotesScreen> with SingleTicker
               labelColor: Colors.white,
               unselectedLabelColor: Colors.white60,
               indicatorColor: Colors.amber,
+              isScrollable: true, // Adicionado scroll para caber 5 abas em telas menores
               tabs: const [
-                Tab(text: 'Encaminhados'),
-                Tab(text: 'Rascunhos'),
+                Tab(text: 'Orçados'),      // Pendente, Enviado
+                Tab(text: 'Rascunhos'),    // Rascunho
+                Tab(text: 'Em Andamento'), // Aprovado, Produção
+                Tab(text: 'Concluídos'),   // Concluído
+                Tab(text: 'Cancelados'),   // Cancelado
               ],
             ),
           ),
@@ -99,15 +104,44 @@ class _AdminQuotesScreenState extends State<AdminQuotesScreen> with SingleTicker
                 }
 
                 final allQuotes = snapshot.data!;
-                // Filtro usando Constantes
-                final submittedQuotes = allQuotes.where((q) => q.status != AppConstants.statusRascunho).toList();
-                final draftQuotes = allQuotes.where((q) => q.status == AppConstants.statusRascunho).toList();
+
+                // --- LOGICA DE FILTRO DAS 5 ABAS ---
+                
+                // 1. ORÇADOS: Pendente ou Enviado
+                final listOrcados = allQuotes.where((q) => 
+                  q.status == AppConstants.statusPendente || 
+                  q.status == AppConstants.statusEnviado
+                ).toList();
+
+                // 2. RASCUNHOS
+                final listRascunhos = allQuotes.where((q) => 
+                  q.status == AppConstants.statusRascunho
+                ).toList();
+
+                // 3. CANCELADOS
+                final listCancelados = allQuotes.where((q) => 
+                  q.status == AppConstants.statusCancelado
+                ).toList();
+
+                // 4. EM ANDAMENTO: Aprovado ou Produção
+                final listAndamento = allQuotes.where((q) => 
+                  q.status == AppConstants.statusAprovado || 
+                  q.status == AppConstants.statusProducao
+                ).toList();
+
+                // 5. CONCLUÍDOS
+                final listConcluidos = allQuotes.where((q) => 
+                  q.status == AppConstants.statusConcluido
+                ).toList();
 
                 return TabBarView(
                   controller: _tabController,
                   children: [
-                    _buildQuoteList(submittedQuotes),
-                    _buildQuoteList(draftQuotes),
+                    _buildQuoteList(listOrcados, "Nenhum orçamento pendente."),
+                    _buildQuoteList(listRascunhos, "Nenhum rascunho."),
+                    _buildQuoteList(listAndamento, "Nenhuma produção em andamento."),
+                    _buildQuoteList(listConcluidos, "Nenhuma entrega concluída."),
+                    _buildQuoteList(listCancelados, "Nenhum cancelado."),
                   ],
                 );
               },
@@ -125,19 +159,22 @@ class _AdminQuotesScreenState extends State<AdminQuotesScreen> with SingleTicker
     );
   }
 
-  Widget _buildQuoteList(List<Quote> quotes) {
+  Widget _buildQuoteList(List<Quote> quotes, String emptyMsg) {
     if (quotes.isEmpty) {
-      return const Center(
+      return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(Icons.inbox_outlined, size: 48, color: Colors.grey),
-            SizedBox(height: 8),
-            Text("Lista vazia.", style: TextStyle(color: Colors.grey)),
+            const SizedBox(height: 8),
+            Text(emptyMsg, style: const TextStyle(color: Colors.grey)),
           ],
         ),
       );
     }
+
+    // Ordenar por data (mais recente primeiro)
+    quotes.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
     return ListView.builder(
       padding: const EdgeInsets.all(12),
@@ -188,7 +225,6 @@ class _AdminQuotesScreenState extends State<AdminQuotesScreen> with SingleTicker
   }
 
   Widget _buildStatusBadge(String status) {
-    // Busca cor da constante ou usa fallback
     Color color = AppConstants.statusColors[status] ?? Colors.blueGrey;
 
     return Container(

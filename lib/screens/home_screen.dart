@@ -10,8 +10,6 @@ import 'admin_dashboard_screen.dart';
 import 'admin_quotes_screen.dart';
 import 'admin_components_screen.dart';
 import 'admin_kits_screen.dart';
-// Note: admin_mass_update_screen não é mais importado aqui, pois está dentro de Settings
-// Novas Telas de Acesso Rápido
 import 'admin_low_stock_screen.dart';
 import 'admin_settings_screen.dart';
 
@@ -43,7 +41,7 @@ class HomeScreen extends StatelessWidget {
   }
 }
 
-// --- ESTRUTURA DO ADMIN (Atualizada: 4 Abas) ---
+// --- ESTRUTURA DO ADMIN (Mantida igual) ---
 class _AdminHomeStructure extends StatefulWidget {
   final AuthService authService;
   const _AdminHomeStructure({required this.authService});
@@ -55,7 +53,6 @@ class _AdminHomeStructure extends StatefulWidget {
 class _AdminHomeStructureState extends State<_AdminHomeStructure> {
   @override
   Widget build(BuildContext context) {
-    // Length reduzido para 4
     return DefaultTabController(
       length: 4, 
       child: Scaffold(
@@ -66,7 +63,6 @@ class _AdminHomeStructureState extends State<_AdminHomeStructure> {
           elevation: 0,
           centerTitle: false,
           actions: [
-            // ÍCONE DE ALERTA DE ESTOQUE
             IconButton(
               tooltip: 'Estoque Baixo',
               icon: const Icon(Icons.notifications_active_outlined, color: Colors.amber),
@@ -74,7 +70,6 @@ class _AdminHomeStructureState extends State<_AdminHomeStructure> {
                 Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminLowStockScreen()));
               },
             ),
-            // ÍCONE DE CONFIGURAÇÕES (Onde agora ficam os PREÇOS)
             IconButton(
               tooltip: 'Configurações',
               icon: const Icon(Icons.settings_outlined, color: Colors.white),
@@ -82,7 +77,6 @@ class _AdminHomeStructureState extends State<_AdminHomeStructure> {
                 Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminSettingsScreen()));
               },
             ),
-            // LOGOUT
             IconButton(
               tooltip: 'Sair',
               icon: const Icon(Icons.logout),
@@ -101,7 +95,6 @@ class _AdminHomeStructureState extends State<_AdminHomeStructure> {
               Tab(icon: Icon(Icons.list_alt), text: "Orçamentos"),
               Tab(icon: Icon(Icons.inventory_2), text: "Componentes"),
               Tab(icon: Icon(Icons.view_quilt), text: "Kits"),
-              // Aba de preços removida
             ],
           ),
         ),
@@ -111,7 +104,6 @@ class _AdminHomeStructureState extends State<_AdminHomeStructure> {
             AdminQuotesScreen(),
             AdminComponentsScreen(),
             AdminKitsScreen(),
-            // AdminMassUpdateScreen removido daqui
           ],
         ),
       ),
@@ -119,7 +111,7 @@ class _AdminHomeStructureState extends State<_AdminHomeStructure> {
   }
 }
 
-// --- ESTRUTURA DO CLIENTE (Mantida) ---
+// --- ESTRUTURA DO CLIENTE (Atualizada com Logo) ---
 class _ClientHomeStructure extends StatelessWidget {
   final AuthService authService;
   const _ClientHomeStructure({required this.authService});
@@ -129,7 +121,7 @@ class _ClientHomeStructure extends StatelessWidget {
     return Scaffold(
       backgroundColor: Colors.grey[50],
       appBar: AppBar(
-        title: const Text('Rod Builder'),
+        title: const Text('Jarbas Custom Rods'),
         centerTitle: true,
         backgroundColor: Colors.blueGrey[900],
         elevation: 0,
@@ -147,11 +139,41 @@ class _ClientHomeStructure extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text("Bem-vindo!", style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.blueGrey)),
+            // --- LOGO JARBAS CUSTOM RODS ---
+            Center(
+              child: Container(
+                height: 120, // Altura ajustada para destaque
+                margin: const EdgeInsets.only(bottom: 24),
+                child: Image.asset(
+                  'assets/logo_jarbas.png',
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) {
+                    // Fallback caso a imagem não carregue
+                    return Icon(
+                      Icons.phishing, 
+                      size: 80, 
+                      color: Colors.blueGrey[300]
+                    );
+                  },
+                ),
+              ),
+            ),
+
+            // --- TEXTOS CENTRALIZADOS ---
+            const Text(
+              "Bem-vindo!", 
+              style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.blueGrey),
+              textAlign: TextAlign.center, // Centraliza o texto
+            ),
             const SizedBox(height: 8),
-            const Text("Crie sua vara personalizada ou escolha um de nossos modelos prontos.", style: TextStyle(fontSize: 16, color: Colors.grey)),
+            const Text(
+              "Crie sua vara personalizada ou escolha um de nossos modelos prontos.", 
+              style: TextStyle(fontSize: 16, color: Colors.grey),
+              textAlign: TextAlign.center, // Centraliza o texto
+            ),
             const SizedBox(height: 40),
 
+            // --- CARTÕES DE AÇÃO ---
             _buildActionCard(
               context,
               title: "Montar Nova Vara",

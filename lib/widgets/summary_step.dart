@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/rod_builder_provider.dart';
-import '../utils/financial_helper.dart'; // Import Helper
+import '../utils/financial_helper.dart'; 
 
 class SummaryStep extends StatelessWidget {
   final bool isAdmin;
@@ -33,10 +33,6 @@ class SummaryStep extends StatelessWidget {
       ],
     );
   }
-
-  // ... (Métodos _buildClientInfoCard, _buildInfoRow, _buildClientComponentList permanecem iguais) ...
-  // Vou omitir os métodos que NÃO mudaram para economizar espaço na resposta, 
-  // mas incluirei o código completo dos métodos alterados.
 
   Widget _buildClientInfoCard(RodBuilderProvider provider) {
     return Card(
@@ -105,6 +101,7 @@ class SummaryStep extends StatelessWidget {
     );
   }
 
+  // --- CORREÇÃO DE VISIBILIDADE AQUI ---
   Widget _buildSimpleGroup(String title, List<RodItem> items) {
     if (items.isEmpty) return const SizedBox.shrink();
     return Column(
@@ -122,9 +119,29 @@ class SummaryStep extends StatelessWidget {
             padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
             child: Row(
               children: [
-                Text("${item.quantity}x", style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey)),
+                // Quantidade em destaque
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.blueGrey[50],
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: Colors.blueGrey[200]!)
+                  ),
+                  child: Text("${item.quantity}x", style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey)),
+                ),
                 const SizedBox(width: 12),
-                Expanded(child: Text("${item.component.name}$variation")),
+                
+                // Texto Principal com cor mais forte (Correção de Contraste)
+                Expanded(
+                  child: Text(
+                    "${item.component.name}$variation", 
+                    style: const TextStyle(
+                      color: Colors.black87, // Cor escura para contraste no fundo branco
+                      fontWeight: FontWeight.w500,
+                      fontSize: 14
+                    )
+                  )
+                ),
               ],
             ),
           );
@@ -146,7 +163,6 @@ class SummaryStep extends StatelessWidget {
     );
   }
 
-  // --- AQUI A MUDANÇA: Usa o Helper para calcular item a item ---
   Widget _buildDetailedGroup(String categoryName, List<RodItem> items) {
     if (items.isEmpty) return const SizedBox.shrink();
 
@@ -159,7 +175,6 @@ class SummaryStep extends StatelessWidget {
           child: Text(categoryName.toUpperCase(), style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blueGrey[900])),
         ),
         ...items.map((item) {
-          // Usa o Helper para calcular métricas unitárias/totais do item
           final metrics = FinancialHelper.calculateItemMetrics(
             costPrice: item.component.costPrice,
             sellPrice: item.component.price,
@@ -189,7 +204,6 @@ class SummaryStep extends StatelessWidget {
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    // Coluna Custo
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -202,7 +216,6 @@ class SummaryStep extends StatelessWidget {
                     ),
                     Container(width: 1, height: 24, color: Colors.grey[300]),
                     const SizedBox(width: 8),
-                    // Coluna Venda
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -213,7 +226,6 @@ class SummaryStep extends StatelessWidget {
                         ],
                       ),
                     ),
-                    // Coluna Lucro
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(color: Colors.green[50], borderRadius: BorderRadius.circular(6)),
@@ -235,11 +247,7 @@ class SummaryStep extends StatelessWidget {
     );
   }
 
-  // --- AQUI A MUDANÇA: Lógica de Totais ---
   Widget _buildAdminFinancialTotals(RodBuilderProvider provider) {
-    // Para usar o helper global, precisaria converter RodItems para Maps ou criar um método específico.
-    // Como os dados estão "vivos" no provider, fazemos a soma local rápida, mas usando a lógica de lucro/margem padronizada.
-    
     double sumCost(List<RodItem> list) => list.fold(0.0, (sum, item) => sum + (item.component.costPrice * item.quantity));
     
     double totalPartsCost = 0.0;
@@ -249,7 +257,6 @@ class SummaryStep extends StatelessWidget {
     totalPartsCost += sumCost(provider.selectedPassadoresList);
     totalPartsCost += sumCost(provider.selectedAcessoriosList);
 
-    // Métrica Final
     double totalRevenue = provider.totalPrice; 
     double totalProfit = totalRevenue - totalPartsCost;
     double marginPercent = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0.0;

@@ -166,12 +166,14 @@ class _AdminAlertsScreenState extends State<AdminAlertsScreen> {
     );
   }
 
+  // --- CORREÇÃO AQUI ---
   String _getVariationStockText(Component c) {
     if (c.variations.isEmpty) return 'Item único';
     
-    final lowVars = c.variations.entries
-        .where((e) => e.value < 3)
-        .map((e) => "${e.key}: ${e.value}")
+    // Itera sobre a lista de variações diretamente
+    final lowVars = c.variations
+        .where((v) => v.stock <= 3) // Verifica estoque baixo (limite hardcoded 3 aqui para visualização)
+        .map((v) => "${v.name}: ${v.stock}")
         .join(", ");
     
     if (lowVars.isEmpty) return 'Estoque total baixo, mas variações ok.';

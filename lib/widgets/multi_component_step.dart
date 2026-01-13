@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/component_model.dart';
-import '../providers/rod_builder_provider.dart'; // Para acessar RodItem
+import '../providers/rod_builder_provider.dart'; 
 import 'component_selector.dart';
 
 class MultiComponentStep extends StatefulWidget {
@@ -9,10 +9,9 @@ class MultiComponentStep extends StatefulWidget {
   final String title;
   final String emptyMessage;
   final IconData emptyIcon;
-  final List<RodItem> items; // Lista atual do Provider
+  final List<RodItem> items; 
   
-  // Callbacks
-  final Function(Component, String?) onAdd; // Mantido para compatibilidade simples
+  final Function(Component, String?) onAdd;
   final Function(int) onRemove;
   final Function(int, int) onUpdateQty;
 
@@ -52,7 +51,6 @@ class _MultiComponentStepState extends State<MultiComponentStep> {
             ),
             child: Column(
               children: [
-                // Header do Modal
                 const SizedBox(height: 12),
                 Container(width: 40, height: 5, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10))),
                 Padding(
@@ -60,19 +58,15 @@ class _MultiComponentStepState extends State<MultiComponentStep> {
                   child: Text("Selecionar ${widget.title}(s)", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                 ),
                 const Divider(height: 1),
-                
-                // O Seletor
                 Expanded(
                   child: ComponentSelector(
                     category: widget.categoryKey,
                     isAdmin: widget.isAdmin,
-                    // Aqui está a mágica da múltipla seleção
                     onMultiSelectConfirm: (selectedList) {
                       for (var item in selectedList) {
-                        // Chama o onAdd para cada item selecionado
                         widget.onAdd(item['comp'], item['var']);
                       }
-                      Navigator.pop(context); // Fecha o modal só no final
+                      Navigator.pop(context); 
                     },
                   ),
                 ),
@@ -84,12 +78,47 @@ class _MultiComponentStepState extends State<MultiComponentStep> {
     );
   }
 
+  // --- NOVO MÉTODO: Exibir Imagem Ampliada ---
+  void _showImageDialog(String imageUrl) {
+    if (imageUrl.isEmpty) return;
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: EdgeInsets.zero,
+        child: Stack(
+          alignment: Alignment.topRight,
+          children: [
+            SizedBox(
+              width: double.infinity,
+              height: double.infinity,
+              child: InteractiveViewer(
+                minScale: 0.5,
+                maxScale: 4.0,
+                child: Image.network(imageUrl, fit: BoxFit.contain),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: CircleAvatar(
+                backgroundColor: Colors.black54,
+                child: IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white),
+                  onPressed: () => Navigator.pop(ctx),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Botão de Adicionar
         ElevatedButton.icon(
           onPressed: _openMultiSelector,
           icon: const Icon(Icons.add),
@@ -107,16 +136,11 @@ class _MultiComponentStepState extends State<MultiComponentStep> {
         ),
         const SizedBox(height: 16),
 
-        // Lista de Itens Selecionados
         if (widget.items.isEmpty)
           Container(
             padding: const EdgeInsets.all(32),
             alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey[200]!)
-            ),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey[200]!)),
             child: Column(
               children: [
                 Icon(widget.emptyIcon, size: 48, color: Colors.grey[300]),
@@ -139,36 +163,47 @@ class _MultiComponentStepState extends State<MultiComponentStep> {
                 child: Padding(
                   padding: const EdgeInsets.all(8.0),
                   child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Imagem
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(4),
-                        child: rodItem.component.imageUrl.isNotEmpty
-                            ? Image.network(rodItem.component.imageUrl, width: 50, height: 50, fit: BoxFit.cover)
-                            : Container(width: 50, height: 50, color: Colors.grey[100], child: const Icon(Icons.image, size: 20, color: Colors.grey)),
+                      // IMAGEM CLICÁVEL
+                      GestureDetector(
+                        onTap: () => _showImageDialog(rodItem.component.imageUrl),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: rodItem.component.imageUrl.isNotEmpty
+                              ? Image.network(rodItem.component.imageUrl, width: 50, height: 50, fit: BoxFit.cover)
+                              : Container(width: 50, height: 50, color: Colors.grey[100], child: const Icon(Icons.image, size: 20, color: Colors.grey)),
+                        ),
                       ),
                       const SizedBox(width: 12),
                       
-                      // Infos
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(rodItem.component.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                            if (rodItem.variation != null)
-                              Text("Var: ${rodItem.variation}", style: TextStyle(color: Colors.grey[600], fontSize: 12)),
                             
-                            // Preço Unitário
-                            const SizedBox(height: 4),
-                            Text(
-                              "R\$ ${rodItem.component.price.toStringAsFixed(2)}", 
-                              style: TextStyle(fontSize: 12, color: Colors.blueGrey[700], fontWeight: FontWeight.bold)
-                            ),
+                            if (rodItem.component.description.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4.0, bottom: 4.0),
+                                child: Text(
+                                  rodItem.component.description, 
+                                  style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                                  softWrap: true,
+                                ),
+                              ),
+
+                            if (rodItem.variation != null)
+                              Text("Var: ${rodItem.variation}", style: TextStyle(color: Colors.blueGrey[700], fontSize: 12, fontWeight: FontWeight.w500)),
+                            
+                            if (widget.isAdmin) ...[
+                              const SizedBox(height: 4),
+                              Text("R\$ ${rodItem.component.price.toStringAsFixed(2)}", style: TextStyle(fontSize: 12, color: Colors.blueGrey[700], fontWeight: FontWeight.bold)),
+                            ]
                           ],
                         ),
                       ),
 
-                      // Controle de Quantidade
                       Row(
                         children: [
                           IconButton(

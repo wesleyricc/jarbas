@@ -1,28 +1,27 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/quote_model.dart';
+import '../models/component_model.dart'; // Necessário para acessar a classe ComponentVariation
 import '../utils/app_constants.dart';
 
 class QuoteService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  late final CollectionReference _quotesCollection;
-  late final CollectionReference _componentsCollection;
+  final CollectionReference _quotesCollection = FirebaseFirestore.instance.collection(AppConstants.colQuotes);
+  final CollectionReference _componentsCollection = FirebaseFirestore.instance.collection(AppConstants.colComponents);
 
-  // Status que ativam a baixa de estoque (Usando constantes para segurança)
-  final List<String> _stockConsumingStatuses = [
-    AppConstants.statusAprovado,
-    AppConstants.statusProducao,
-    AppConstants.statusConcluido
-  ];
-
-  QuoteService() {
-    _quotesCollection = _firestore.collection(AppConstants.colQuotes);
-    _componentsCollection = _firestore.collection(AppConstants.colComponents);
+  // --- CRUD BÁSICO ---
+  
+  Future<void> saveQuote(Quote quote) {
+    if (quote.id == null || quote.id!.isEmpty) {
+      return _quotesCollection.add(quote.toMap());
+    } else {
+      return _quotesCollection.doc(quote.id).set(quote.toMap());
+    }
   }
 
-  // --- LEITURA ---
-
   Stream<List<Quote>> getQuotesStream(String userId) {
-    return _quotesCollection.where('userId', isEqualTo: userId).snapshots().map((snapshot) {
+    return _quotesCollection
+        .where('userId', isEqualTo: userId)
+        .snapshots()
+        .map((snapshot) {
       return snapshot.docs.map((doc) => Quote.fromFirestore(doc)).toList();
     });
   }
@@ -33,138 +32,95 @@ class QuoteService {
     });
   }
 
-  Future<DocumentSnapshot> getQuoteSnapshot(String quoteId) {
-    return _quotesCollection.doc(quoteId).get();
+  Future<void> updateQuote(String id, Map<String, dynamic> data) {
+    return _quotesCollection.doc(id).update(data);
   }
 
-  // --- ESCRITA COM TRANSAÇÃO DE ESTOQUE ---
-
-  Future<DocumentReference> saveQuote(Quote quote) async {
-    return await _firestore.runTransaction((transaction) async {
-      final newQuoteRef = _quotesCollection.doc();
-
-      if (_stockConsumingStatuses.contains(quote.status.toLowerCase())) {
-        await _processStockChange(transaction, quote, isDeducting: true);
-      }
-
-      transaction.set(newQuoteRef, quote.toMap());
-      return newQuoteRef;
-    });
+  Future<void> deleteQuote(String id) {
+    return _quotesCollection.doc(id).delete();
   }
 
-  Future<void> updateQuote(String quoteId, Map<String, dynamic> newData) async {
-    final quoteRef = _quotesCollection.doc(quoteId);
+  // --- CONTROLE DE ESTOQUE (NOVO) ---
 
-    await _firestore.runTransaction((transaction) async {
-      final snapshot = await transaction.get(quoteRef);
-      if (!snapshot.exists) throw Exception("Orçamento não encontrado!");
+  /// Atualiza o estoque com base nos itens do orçamento.
+  /// [isDeducting]: true para BAIXAR (venda), false para ESTORNAR (cancelamento).
+  Future<void> updateStockFromQuote(Quote quote, {required bool isDeducting}) async {
+    final firestore = FirebaseFirestore.instance;
 
-      final oldQuote = Quote.fromFirestore(snapshot);
-      final newStatus = (newData['status'] ?? oldQuote.status).toString().toLowerCase();
+    // Função auxiliar para processar uma lista de itens do orçamento
+    Future<void> processItems(List<Map<String, dynamic>> items) async {
+      for (var item in items) {
+        String compId = item['id']; 
+        String? variationName = item['variation'];
+        int qty = (item['quantity'] ?? 1).toInt();
+        
+        // Define se soma ou subtrai
+        int change = isDeducting ? -qty : qty;
 
-      bool wasConsuming = _stockConsumingStatuses.contains(oldQuote.status.toLowerCase());
-      bool willConsume = _stockConsumingStatuses.contains(newStatus);
+        DocumentReference docRef = _componentsCollection.doc(compId);
 
-      // 1. REVERTER ESTOQUE ANTIGO SE NECESSÁRIO
-      if (wasConsuming) {
-        await _processStockChange(transaction, oldQuote, isDeducting: false); // Devolve
-      }
+        // Executa uma transação para cada componente para garantir integridade
+        await firestore.runTransaction((transaction) async {
+          DocumentSnapshot snapshot = await transaction.get(docRef);
+          
+          if (!snapshot.exists) return; // Componente não existe mais, ignora.
 
-      // 2. APLICAR NOVO ESTOQUE SE NECESSÁRIO
-      if (willConsume) {
-        // Helper para mesclar listas
-        List<Map<String, dynamic>> getList(String key, List<Map<String, dynamic>> oldList) {
-          if (newData.containsKey(key)) {
-            return List<Map<String, dynamic>>.from(newData[key]);
+          // Reconstrói o objeto Component a partir do snapshot
+          Component comp = Component.fromFirestore(snapshot);
+          
+          // Prepara as listas para modificação
+          List<ComponentVariation> updatedVars = List.from(comp.variations);
+          int newTotalStock = comp.stock;
+          bool hasChanges = false;
+
+          // Cenário 1: Item tem variação selecionada
+          if (variationName != null && variationName.isNotEmpty && updatedVars.isNotEmpty) {
+             int index = updatedVars.indexWhere((v) => v.name == variationName);
+             if (index != -1) {
+               var v = updatedVars[index];
+               int newVarStock = v.stock + change;
+               
+               // Atualiza o objeto da variação
+               updatedVars[index] = ComponentVariation(
+                 id: v.id, 
+                 name: v.name, 
+                 stock: newVarStock, 
+                 price: v.price, 
+                 supplierPrice: v.supplierPrice, 
+                 costPrice: v.costPrice, 
+                 imageUrl: v.imageUrl
+               );
+               hasChanges = true;
+             }
+          } 
+          // Cenário 2: Item sem variação (ou variação não encontrada), mas lista de variações vazia
+          else if (updatedVars.isEmpty) {
+             // É um produto simples, atualiza direto o estoque total
+             newTotalStock += change;
+             hasChanges = true;
           }
-          return oldList;
-        }
 
-        final tempNewQuote = Quote(
-          userId: oldQuote.userId,
-          status: newStatus,
-          createdAt: oldQuote.createdAt,
-          totalPrice: 0,
-          clientName: '', clientPhone: '', clientCity: '', clientState: '',
-          extraLaborCost: 0,
-          blanksList: getList('blanksList', oldQuote.blanksList),
-          cabosList: getList('cabosList', oldQuote.cabosList),
-          reelSeatsList: getList('reelSeatsList', oldQuote.reelSeatsList),
-          passadoresList: getList('passadoresList', oldQuote.passadoresList),
-          acessoriosList: getList('acessoriosList', oldQuote.acessoriosList),
-        );
-
-        await _processStockChange(transaction, tempNewQuote, isDeducting: true); // Deduz
-      }
-
-      transaction.update(quoteRef, newData);
-    });
-  }
-
-  Future<void> deleteQuote(String quoteId) async {
-    final quoteRef = _quotesCollection.doc(quoteId);
-
-    await _firestore.runTransaction((transaction) async {
-      final snapshot = await transaction.get(quoteRef);
-      if (!snapshot.exists) return;
-
-      final quote = Quote.fromFirestore(snapshot);
-
-      if (_stockConsumingStatuses.contains(quote.status.toLowerCase())) {
-        await _processStockChange(transaction, quote, isDeducting: false); // Devolve
-      }
-
-      transaction.delete(quoteRef);
-    });
-  }
-
-  // --- HELPER DE ESTOQUE ---
-
-  Future<void> _processStockChange(Transaction t, Quote quote, {required bool isDeducting}) async {
-    int multiplier = isDeducting ? -1 : 1;
-
-    Future<void> updateItem(String? name, String? variation, int qty) async {
-      if (name == null || name.isEmpty || qty <= 0) return;
-
-      try {
-        final querySnap = await _componentsCollection.where('name', isEqualTo: name).limit(1).get();
-        if (querySnap.docs.isEmpty) return;
-
-        final docRef = querySnap.docs.first.reference;
-        final currentData = querySnap.docs.first.data() as Map<String, dynamic>;
-
-        if (variation != null && variation.isNotEmpty) {
-          Map<String, dynamic> variations = currentData['variations'] != null
-              ? Map<String, dynamic>.from(currentData['variations'])
-              : {};
-
-          if (variations.containsKey(variation)) {
-            int currentVarStock = (variations[variation] as num).toInt();
-            int newVarStock = currentVarStock + (qty * multiplier);
-            variations[variation] = newVarStock;
-
-            int currentTotal = (currentData['stock'] ?? 0).toInt();
-            int newTotal = currentTotal + (qty * multiplier);
-
-            t.update(docRef, {
-              'variations': variations,
-              'stock': newTotal
-            });
+          // Recalcula o estoque total se houver variações
+          if (updatedVars.isNotEmpty) {
+             newTotalStock = updatedVars.fold(0, (sum, v) => sum + v.stock);
+             hasChanges = true; // Sempre marca como alterado para salvar a consistência
           }
-        } else {
-          int currentStock = (currentData['stock'] ?? 0).toInt();
-          int newStock = currentStock + (qty * multiplier);
-          t.update(docRef, {'stock': newStock});
-        }
-      } catch (e) {
-        print("Erro ao atualizar estoque: $e");
+
+          if (hasChanges) {
+             transaction.update(docRef, {
+               'stock': newTotalStock,
+               'variations': updatedVars.map((v) => v.toMap()).toList()
+             });
+          }
+        });
       }
     }
 
-    for (var item in quote.blanksList) await updateItem(item['name'], item['variation'], (item['quantity'] ?? 1).toInt());
-    for (var item in quote.cabosList) await updateItem(item['name'], item['variation'], (item['quantity'] ?? 1).toInt());
-    for (var item in quote.reelSeatsList) await updateItem(item['name'], item['variation'], (item['quantity'] ?? 1).toInt());
-    for (var item in quote.passadoresList) await updateItem(item['name'], item['variation'], (item['quantity'] ?? 1).toInt());
-    for (var item in quote.acessoriosList) await updateItem(item['name'], item['variation'], (item['quantity'] ?? 1).toInt());
+    // Processa todas as listas do orçamento
+    await processItems(quote.blanksList);
+    await processItems(quote.cabosList);
+    await processItems(quote.reelSeatsList);
+    await processItems(quote.passadoresList);
+    await processItems(quote.acessoriosList);
   }
 }

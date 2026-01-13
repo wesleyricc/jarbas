@@ -132,9 +132,12 @@ class _AdminLowStockScreenState extends State<AdminLowStockScreen> {
     );
   }
 
-  // Helper para mostrar quais variações estão baixas
+  // --- CORREÇÃO AQUI ---
   String _getLowVariations(Component c) {
-    final low = c.variations.entries.where((e) => e.value <= _threshold).map((e) => "${e.key}: ${e.value}").join(", ");
+    final low = c.variations
+        .where((v) => v.stock <= _threshold) // Acessa o objeto v (ComponentVariation)
+        .map((v) => "${v.name}: ${v.stock}") // Acessa propriedades name e stock
+        .join(", ");
     return low.isEmpty ? "Variações OK" : low;
   }
 }

@@ -4,12 +4,12 @@ import '../models/component_model.dart';
 import '../models/quote_model.dart';
 import '../models/kit_model.dart';
 import '../services/quote_service.dart';
-import '../utils/app_constants.dart'; // Importação das constantes
+import '../utils/app_constants.dart';
 
 class RodItem {
   final Component component;
   int quantity;
-  String? variation;
+  String? variation; // Nome da variação selecionada
   
   RodItem({
     required this.component, 
@@ -27,14 +27,14 @@ class RodBuilderProvider extends ChangeNotifier {
   String clientCity = '';
   String clientState = '';
 
-  // --- LISTAS PARA TODAS AS ETAPAS ---
+  // Listas
   List<RodItem> _selectedBlanks = [];
   List<RodItem> _selectedCabos = [];
   List<RodItem> _selectedReelSeats = [];
   List<RodItem> _selectedPassadores = [];
   List<RodItem> _selectedAcessorios = [];
   
-  // Customização e Custos Extras
+  // Customização e Totais
   String customizationText = '';
   double _extraLaborCost = 0.0;
   double _totalPrice = 0.0;
@@ -48,9 +48,8 @@ class RodBuilderProvider extends ChangeNotifier {
   double get extraLaborCost => _extraLaborCost;
   double get totalPrice => _totalPrice;
 
-  // --- MÉTODOS DE AÇÃO (Adicionar/Remover/Atualizar) ---
+  // --- MÉTODOS DE AÇÃO ---
 
-  // Blanks
   void addBlank(Component c, int qty, {String? variation}) {
     _selectedBlanks.add(RodItem(component: c, quantity: qty, variation: variation));
     _calculateTotalPrice();
@@ -67,7 +66,6 @@ class RodBuilderProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Cabos
   void addCabo(Component c, int qty, {String? variation}) {
     _selectedCabos.add(RodItem(component: c, quantity: qty, variation: variation));
     _calculateTotalPrice();
@@ -84,7 +82,6 @@ class RodBuilderProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Reel Seats
   void addReelSeat(Component c, int qty, {String? variation}) {
     _selectedReelSeats.add(RodItem(component: c, quantity: qty, variation: variation));
     _calculateTotalPrice();
@@ -101,7 +98,6 @@ class RodBuilderProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Passadores
   void addPassador(Component c, int qty, {String? variation}) {
     _selectedPassadores.add(RodItem(component: c, quantity: qty, variation: variation));
     _calculateTotalPrice();
@@ -118,7 +114,6 @@ class RodBuilderProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Acessórios
   void addAcessorio(Component c, int qty, {String? variation}) {
     _selectedAcessorios.add(RodItem(component: c, quantity: qty, variation: variation));
     _calculateTotalPrice();
@@ -135,7 +130,6 @@ class RodBuilderProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Dados do Cliente
   void updateClientInfo({required String name, required String phone, required String city, required String state}) {
     clientName = name;
     clientPhone = phone;
@@ -144,7 +138,6 @@ class RodBuilderProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Customização
   void setCustomizationText(String text) {
     customizationText = text;
     notifyListeners();
@@ -156,19 +149,40 @@ class RodBuilderProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // --- CONFIGURAÇÕES ---
   Future<void> fetchSettings() async {
-    // Espaço reservado para carregar config global se necessário no futuro
     await Future.delayed(Duration.zero); 
   }
 
-  // --- CÁLCULOS ---
+  // --- LÓGICA DE PREÇO DINÂMICA (NOVO) ---
+
+  /// Retorna o preço correto:
+  /// 1. Se tiver variação selecionada E essa variação tiver preço > 0 -> Preço da Variação.
+  /// 2. Caso contrário -> Preço Base do Componente.
+  double _getItemPrice(RodItem item) {
+    if (item.variation != null && item.variation!.isNotEmpty) {
+      try {
+        final variant = item.component.variations.firstWhere(
+          (v) => v.name == item.variation,
+          // Retorna um dummy se não encontrar
+          orElse: () => ComponentVariation(id: '', name: '', stock: 0, price: 0.0), 
+        );
+        
+        if (variant.price > 0) return variant.price;
+      } catch (e) {
+        // Ignora erro
+      }
+    }
+    return item.component.price;
+  }
 
   void _calculateTotalPrice() {
     double total = 0.0;
     
     double sumList(List<RodItem> list) {
-      return list.fold(0.0, (sum, item) => sum + (item.component.price * item.quantity));
+      return list.fold(0.0, (sum, item) {
+        // Usa o helper de preço dinâmico
+        return sum + (_getItemPrice(item) * item.quantity);
+      });
     }
 
     total += sumList(_selectedBlanks);
@@ -202,9 +216,6 @@ class RodBuilderProvider extends ChangeNotifier {
       Future<Component?> fetchComp(String id) async {
         if (id.isEmpty) return null;
         try {
-          // Usa a constante para acessar a coleção (embora aqui seja string direta na query)
-          // Idealmente: firestore.collection(AppConstants.colComponents)...
-          // Mas manteremos compatível com o ID direto.
           final doc = await firestore.collection(AppConstants.colComponents).doc(id).get();
           if (doc.exists) return Component.fromFirestore(doc);
         } catch (e) {
@@ -251,14 +262,14 @@ class RodBuilderProvider extends ChangeNotifier {
         'name': item.component.name,
         'variation': item.variation,
         'quantity': item.quantity,
-        'cost': item.component.costPrice,
-        'price': item.component.price,
+        'cost': item.component.costPrice, // Custo base (assumimos constante por enquanto)
+        'price': _getItemPrice(item), // Salva o preço REAL da variação no momento da compra
       }).toList();
     }
 
     final quote = Quote(
       userId: userId,
-      status: status, // Caller deve passar AppConstants.statusX
+      status: status,
       createdAt: Timestamp.now(),
       clientName: clientName,
       clientPhone: clientPhone,
@@ -283,7 +294,7 @@ class RodBuilderProvider extends ChangeNotifier {
     }
   }
 
-  // --- CARREGAR ORÇAMENTO EXISTENTE PARA EDIÇÃO ---
+  // --- CARREGAR ORÇAMENTO ---
   Future<void> loadFromQuote(Quote quote) async {
     clientName = quote.clientName;
     clientPhone = quote.clientPhone;
@@ -295,7 +306,6 @@ class RodBuilderProvider extends ChangeNotifier {
     final FirebaseFirestore firestore = FirebaseFirestore.instance;
 
     Future<Component?> findComponentByName(String name) async {
-       // Usa constante na coleção
        final snapshot = await firestore.collection(AppConstants.colComponents)
            .where('name', isEqualTo: name)
            .limit(1)
@@ -313,18 +323,16 @@ class RodBuilderProvider extends ChangeNotifier {
         String name = item['name'];
         Component? comp = await findComponentByName(name);
         
-        // Se o componente não for encontrado (ex: deletado), cria um temporário
-        // para exibir no orçamento sem quebrar a tela.
         comp ??= Component(
             id: '', 
             name: name, 
             description: '',
-            category: AppConstants.catBlank, // Padrão seguro via constante
+            category: AppConstants.catBlank, 
             price: (item['price'] ?? 0).toDouble(), 
             costPrice: (item['cost'] ?? 0).toDouble(), 
             stock: 0, 
             imageUrl: '', 
-            variations: {},
+            variations: [],
             attributes: {},
           );
 

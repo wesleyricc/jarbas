@@ -312,7 +312,7 @@ class _RodBuilderScreenState extends State<RodBuilderScreen> {
           icon: Icons.build,
           color: Colors.blueGrey,
           onTap: () {
-            provider.clearBuild();
+            //provider.clearBuild();
             _nextStep();
           },
         ),

@@ -4,7 +4,7 @@ import '../utils/app_constants.dart';
 class Quote {
   final String? id;
   final String userId;
-  final String status; // Usa as constantes de AppConstants
+  final String status; 
   final Timestamp createdAt;
   
   // Dados do Cliente
@@ -27,6 +27,9 @@ class Quote {
   // Personalização
   final String? customizationText;
 
+  // NOVO: Fotos da Produção / Vara Pronta
+  final List<String> finishedImages;
+
   Quote({
     this.id,
     required this.userId,
@@ -44,6 +47,7 @@ class Quote {
     this.extraLaborCost = 0.0,
     required this.totalPrice,
     this.customizationText,
+    this.finishedImages = const [], // Inicializa vazio
   });
 
   factory Quote.fromFirestore(DocumentSnapshot doc) {
@@ -52,7 +56,6 @@ class Quote {
     return Quote(
       id: doc.id,
       userId: data['userId'] ?? '',
-      // Fallback seguro usando a constante
       status: data['status'] ?? AppConstants.statusPendente,
       createdAt: data['createdAt'] ?? Timestamp.now(),
       clientName: data['clientName'] ?? '',
@@ -69,6 +72,9 @@ class Quote {
       extraLaborCost: (data['extraLaborCost'] ?? 0.0).toDouble(),
       totalPrice: (data['totalPrice'] ?? 0.0).toDouble(),
       customizationText: data['customizationText'],
+      
+      // Carrega imagens salvas
+      finishedImages: List<String>.from(data['finishedImages'] ?? []),
     );
   }
 
@@ -89,6 +95,7 @@ class Quote {
       'extraLaborCost': extraLaborCost,
       'totalPrice': totalPrice,
       'customizationText': customizationText,
+      'finishedImages': finishedImages, // Salva imagens
     };
   }
 }
