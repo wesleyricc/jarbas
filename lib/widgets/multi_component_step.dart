@@ -78,7 +78,27 @@ class _MultiComponentStepState extends State<MultiComponentStep> {
     );
   }
 
-  // --- NOVO MÉTODO: Exibir Imagem Ampliada ---
+  // --- LÓGICA DE RESOLUÇÃO DE IMAGEM ---
+  String _resolveItemImage(RodItem item) {
+    // 1. Verifica se tem variação selecionada
+    if (item.variation != null && item.variation!.isNotEmpty) {
+      try {
+        // 2. Procura a variação dentro da lista do componente
+        final variant = item.component.variations.firstWhere(
+          (v) => v.name == item.variation,
+        );
+        // 3. Se a variação tiver imagem, retorna ela
+        if (variant.imageUrl != null && variant.imageUrl!.isNotEmpty) {
+          return variant.imageUrl!;
+        }
+      } catch (_) {
+        // Se não encontrar ou der erro, segue para o fallback
+      }
+    }
+    // 4. Fallback: Retorna imagem principal do componente
+    return item.component.imageUrl;
+  }
+
   void _showImageDialog(String imageUrl) {
     if (imageUrl.isEmpty) return;
     showDialog(
@@ -157,6 +177,9 @@ class _MultiComponentStepState extends State<MultiComponentStep> {
             separatorBuilder: (c, i) => const SizedBox(height: 8),
             itemBuilder: (context, index) {
               final rodItem = widget.items[index];
+              // Resolve a imagem correta para este item
+              final displayImage = _resolveItemImage(rodItem);
+
               return Card(
                 elevation: 0,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8), side: BorderSide(color: Colors.grey[200]!)),
@@ -165,13 +188,13 @@ class _MultiComponentStepState extends State<MultiComponentStep> {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // IMAGEM CLICÁVEL
+                      // IMAGEM CLICÁVEL (Usando displayImage resolvida)
                       GestureDetector(
-                        onTap: () => _showImageDialog(rodItem.component.imageUrl),
+                        onTap: () => _showImageDialog(displayImage),
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(4),
-                          child: rodItem.component.imageUrl.isNotEmpty
-                              ? Image.network(rodItem.component.imageUrl, width: 50, height: 50, fit: BoxFit.cover)
+                          child: displayImage.isNotEmpty
+                              ? Image.network(displayImage, width: 50, height: 50, fit: BoxFit.cover)
                               : Container(width: 50, height: 50, color: Colors.grey[100], child: const Icon(Icons.image, size: 20, color: Colors.grey)),
                         ),
                       ),
@@ -198,6 +221,8 @@ class _MultiComponentStepState extends State<MultiComponentStep> {
                             
                             if (widget.isAdmin) ...[
                               const SizedBox(height: 4),
+                              // Nota: Aqui o preço é o base do componente. 
+                              // Se quiser mostrar preço da variação, precisaria de lógica similar à da imagem.
                               Text("R\$ ${rodItem.component.price.toStringAsFixed(2)}", style: TextStyle(fontSize: 12, color: Colors.blueGrey[700], fontWeight: FontWeight.bold)),
                             ]
                           ],

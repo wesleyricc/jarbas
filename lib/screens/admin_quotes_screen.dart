@@ -191,10 +191,16 @@ class _AdminQuotesScreenState extends State<AdminQuotesScreen> with SingleTicker
           child: ListTile(
             contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             onTap: () {
-              Navigator.push(
-                context, 
-                MaterialPageRoute(builder: (_) => AdminQuoteDetailScreen(quote: quote))
-              );
+              // CORREÇÃO: Passando o parâmetro obrigatório quoteId
+              if (quote.id != null) {
+                Navigator.push(
+                  context, 
+                  MaterialPageRoute(builder: (_) => AdminQuoteDetailScreen(
+                    quote: quote,
+                    quoteId: quote.id!, // Passando o ID aqui
+                  ))
+                );
+              }
             },
             title: Text(
               quote.clientName.isEmpty ? "Cliente (Sem nome)" : quote.clientName,

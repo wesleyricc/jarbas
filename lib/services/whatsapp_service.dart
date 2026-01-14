@@ -1,12 +1,12 @@
 import 'package:url_launcher/url_launcher.dart';
 import '../providers/rod_builder_provider.dart';
+import '../models/quote_model.dart'; 
 
 class WhatsAppService {
-  // Substitua pelo número do Admin (lojista)
-  // Formato: CodigoPais + DDD + Numero (sem + ou traços)
+  // Número do Admin (lojista) - Substitua pelo seu número real
   static const String _adminPhoneNumber = "5511999999999"; 
 
-  // --- Método 1: Enviar Orçamento Completo (Usado no Final do Builder) ---
+  // --- Método 1: Enviar Orçamento Completo (Cliente -> Admin) ---
   static Future<void> sendNewQuoteRequest({required RodBuilderProvider provider}) async {
     final buffer = StringBuffer();
     
@@ -17,12 +17,11 @@ class WhatsAppService {
     buffer.writeln("*Cidade:* ${provider.clientCity}/${provider.clientState}");
     buffer.writeln("-------------------------");
     
-    // Helper interno para listar itens
     void writeList(String title, List<RodItem> items) {
       if (items.isNotEmpty) {
         buffer.writeln("*$title:*");
         for (var item in items) {
-          String varText = item.variation != null ? " [${item.variation}]" : "";
+          String varText = (item.variation != null && item.variation!.isNotEmpty) ? " [${item.variation}]" : "";
           buffer.writeln(" - ${item.quantity}x ${item.component.name}$varText");
         }
         buffer.writeln("");
@@ -50,12 +49,10 @@ class WhatsAppService {
     buffer.writeln("-------------------------");
     buffer.writeln("Aguardo retorno para confirmação!");
 
-    final message = buffer.toString();
-    await _launchWhatsApp(message);
+    await _launchWhatsApp(buffer.toString());
   }
 
-  // --- Método 2: Contato Direto (Usado na Home Screen) ---
-  // CORREÇÃO: Agora aceita os parâmetros nomeados que o home_screen está enviando
+  // --- Método 2: Contato Direto (Home Screen) ---
   static Future<void> sendDirectContactRequest({
     required String clientName,
     required String clientPhone,
@@ -74,10 +71,64 @@ class WhatsAppService {
     await _launchWhatsApp(buffer.toString());
   }
 
+  // --- Método 3: Admin Envia Orçamento (Admin -> Cliente) ---
+  static Future<void> sendQuoteToClient(Quote quote) async {
+    final buffer = StringBuffer();
+    
+    buffer.writeln("*Olá ${quote.clientName}, aqui está o resumo do seu orçamento:*");
+    buffer.writeln("-------------------------");
+    
+    // Helper para ler listas do Mapa (Quote Model)
+    void writeMapList(String title, List<Map<String, dynamic>> items) {
+      if (items.isNotEmpty) {
+        buffer.writeln("*$title:*");
+        for (var item in items) {
+          String name = item['name'] ?? 'Item';
+          int qty = item['quantity'] ?? 1;
+          String variation = item['variation'] ?? '';
+          String varText = variation.isNotEmpty ? " [$variation]" : "";
+          
+          buffer.writeln(" - ${qty}x $name$varText");
+        }
+        buffer.writeln("");
+      }
+    }
+
+    writeMapList("Blanks", quote.blanksList);
+    writeMapList("Cabos", quote.cabosList);
+    writeMapList("Reel Seats", quote.reelSeatsList);
+    writeMapList("Passadores", quote.passadoresList);
+    writeMapList("Acessórios", quote.acessoriosList);
+
+    // CORREÇÃO AQUI: Verificação de nulo antes de acessar isNotEmpty
+    if (quote.customizationText != null && quote.customizationText!.isNotEmpty) {
+      buffer.writeln("*Notas:* ${quote.customizationText}");
+      buffer.writeln("");
+    }
+
+    buffer.writeln("-------------------------");
+    buffer.writeln("*TOTAL: R\$ ${quote.totalPrice.toStringAsFixed(2)}*");
+    buffer.writeln("-------------------------");
+    buffer.writeln("Podemos aprovar?");
+
+    // Envia para o telefone do CLIENTE
+    await _launchWhatsApp(buffer.toString(), targetPhone: quote.clientPhone);
+  }
+
   // --- Helper Privado ---
-  static Future<void> _launchWhatsApp(String message) async {
-    // Codifica a mensagem para URL
-    final url = Uri.parse("https://wa.me/$_adminPhoneNumber?text=${Uri.encodeComponent(message)}");
+  static Future<void> _launchWhatsApp(String message, {String? targetPhone}) async {
+    // Se targetPhone for nulo, usa o do Admin.
+    String phone = targetPhone ?? _adminPhoneNumber;
+    
+    // Limpeza do número (mantém apenas dígitos)
+    phone = phone.replaceAll(RegExp(r'[^\d]+'), '');
+
+    // Se o número não começar com 55 e tiver tamanho de celular BR (10 ou 11 dígitos), adiciona 55
+    if (phone.length >= 10 && !phone.startsWith('55')) {
+      phone = '55$phone';
+    }
+
+    final url = Uri.parse("https://wa.me/$phone?text=${Uri.encodeComponent(message)}");
 
     if (await canLaunchUrl(url)) {
       await launchUrl(url, mode: LaunchMode.externalApplication);

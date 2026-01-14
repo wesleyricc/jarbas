@@ -48,6 +48,58 @@ class RodBuilderProvider extends ChangeNotifier {
   double get extraLaborCost => _extraLaborCost;
   double get totalPrice => _totalPrice;
 
+  // --- MÉTODOS PÚBLICOS DE IMAGEM E PREÇO (Para usar na UI) ---
+
+  /// Retorna a imagem correta (Variação ou Base) para exibição na UI
+  String getItemImage(RodItem item) {
+    String baseImage = item.component.imageUrl;
+
+    if (item.variation != null && item.variation!.isNotEmpty) {
+      try {
+        final variant = item.component.variations.firstWhere(
+          (v) => v.name == item.variation,
+          orElse: () => ComponentVariation(id: '', name: '', stock: 0, price: 0.0), 
+        );
+        // Se a variação tiver imagem válida, retorna ela
+        if (variant.imageUrl != null && variant.imageUrl!.isNotEmpty) {
+          return variant.imageUrl!;
+        }
+      } catch (e) { /* ignore */ }
+    }
+    return baseImage;
+  }
+
+  /// Retorna o preço de VENDA correto (Variação ou Base)
+  double getItemPrice(RodItem item) {
+    if (item.variation != null && item.variation!.isNotEmpty) {
+      try {
+        final variant = item.component.variations.firstWhere(
+          (v) => v.name == item.variation,
+          orElse: () => ComponentVariation(id: '', name: '', stock: 0, price: 0.0), 
+        );
+        if (variant.price > 0) return variant.price;
+      } catch (e) { /* ignore */ }
+    }
+    return item.component.price;
+  }
+
+  /// Retorna o preço de CUSTO correto (Variação ou Base)
+  double getItemCost(RodItem item) {
+    double baseCost = item.component.costPrice;
+    
+    if (item.variation != null && item.variation!.isNotEmpty) {
+      try {
+        final variant = item.component.variations.firstWhere(
+          (v) => v.name == item.variation,
+          orElse: () => ComponentVariation(id: '', name: '', stock: 0, price: 0.0), 
+        );
+        // Regra: Se variação tem custo > 0, usa ele.
+        if (variant.costPrice > 0) return variant.costPrice;
+      } catch (e) { /* ignore */ }
+    }
+    return baseCost;
+  }
+
   // --- MÉTODOS DE AÇÃO ---
 
   void addBlank(Component c, int qty, {String? variation}) {
@@ -153,35 +205,12 @@ class RodBuilderProvider extends ChangeNotifier {
     await Future.delayed(Duration.zero); 
   }
 
-  // --- LÓGICA DE PREÇO DINÂMICA (NOVO) ---
-
-  /// Retorna o preço correto:
-  /// 1. Se tiver variação selecionada E essa variação tiver preço > 0 -> Preço da Variação.
-  /// 2. Caso contrário -> Preço Base do Componente.
-  double _getItemPrice(RodItem item) {
-    if (item.variation != null && item.variation!.isNotEmpty) {
-      try {
-        final variant = item.component.variations.firstWhere(
-          (v) => v.name == item.variation,
-          // Retorna um dummy se não encontrar
-          orElse: () => ComponentVariation(id: '', name: '', stock: 0, price: 0.0), 
-        );
-        
-        if (variant.price > 0) return variant.price;
-      } catch (e) {
-        // Ignora erro
-      }
-    }
-    return item.component.price;
-  }
-
   void _calculateTotalPrice() {
     double total = 0.0;
     
     double sumList(List<RodItem> list) {
       return list.fold(0.0, (sum, item) {
-        // Usa o helper de preço dinâmico
-        return sum + (_getItemPrice(item) * item.quantity);
+        return sum + (getItemPrice(item) * item.quantity);
       });
     }
 
@@ -209,7 +238,6 @@ class RodBuilderProvider extends ChangeNotifier {
     notifyListeners();
   }
   
-  // --- CARREGAR KIT ---
   Future<bool> loadKit(KitModel kit) async {
       final FirebaseFirestore firestore = FirebaseFirestore.instance;
       
@@ -255,15 +283,16 @@ class RodBuilderProvider extends ChangeNotifier {
       return true;
   }
 
-  // --- SALVAR ORÇAMENTO ---
   Future<bool> saveQuote(String userId, {required String status}) async {
     List<Map<String, dynamic>> convertList(List<RodItem> list) {
       return list.map((item) => {
+        'id': item.component.id, 
         'name': item.component.name,
         'variation': item.variation,
         'quantity': item.quantity,
-        'cost': item.component.costPrice, // Custo base (assumimos constante por enquanto)
-        'price': _getItemPrice(item), // Salva o preço REAL da variação no momento da compra
+        'imageUrl': getItemImage(item), // Agora usa o método público
+        'costPrice': getItemCost(item), 
+        'price': getItemPrice(item), 
       }).toList();
     }
 
@@ -294,7 +323,6 @@ class RodBuilderProvider extends ChangeNotifier {
     }
   }
 
-  // --- CARREGAR ORÇAMENTO ---
   Future<void> loadFromQuote(Quote quote) async {
     clientName = quote.clientName;
     clientPhone = quote.clientPhone;
@@ -329,9 +357,9 @@ class RodBuilderProvider extends ChangeNotifier {
             description: '',
             category: AppConstants.catBlank, 
             price: (item['price'] ?? 0).toDouble(), 
-            costPrice: (item['cost'] ?? 0).toDouble(), 
+            costPrice: (item['costPrice'] ?? item['cost'] ?? 0).toDouble(), 
             stock: 0, 
-            imageUrl: '', 
+            imageUrl: item['imageUrl'] ?? '', 
             variations: [],
             attributes: {},
           );

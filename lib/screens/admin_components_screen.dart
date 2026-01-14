@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import '../models/component_model.dart';
 import '../services/component_service.dart';
-import '../utils/app_constants.dart'; // Import Constants
-import 'component_form_screen.dart'; // Importa a tela de form reutilizável
+import '../utils/app_constants.dart';
+import 'component_form_screen.dart';
 
 class AdminComponentsScreen extends StatefulWidget {
   const AdminComponentsScreen({super.key});
@@ -32,7 +32,6 @@ class _AdminComponentsScreenState extends State<AdminComponentsScreen> {
   }
 
   void _showComponentForm({Component? component}) {
-    // Reutiliza a tela completa de formulário
     Navigator.push(context, MaterialPageRoute(builder: (c) => ComponentFormScreen(component: component)));
   }
 
@@ -55,11 +54,13 @@ class _AdminComponentsScreenState extends State<AdminComponentsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.grey[50],
-      body: GestureDetector(
-        onTap: () => FocusScope.of(context).unfocus(),
-        child: Column(
+    return GestureDetector(
+      onTap: () => FocusScope.of(context).unfocus(),
+      child: Scaffold(
+        // CORREÇÃO PARA WEB/PWA: Impede o redimensionamento brusco com o teclado
+        resizeToAvoidBottomInset: false, 
+        backgroundColor: Colors.grey[50],
+        body: Column(
           children: [
             // BARRA SUPERIOR
             Container(
@@ -87,10 +88,8 @@ class _AdminComponentsScreenState extends State<AdminComponentsScreen> {
                     child: ListView(
                       scrollDirection: Axis.horizontal,
                       children: [
-                        // Opção 'Todos'
                         _buildFilterChip('todos', 'Todos'),
                         const SizedBox(width: 8),
-                        // Opções Dinâmicas via Constants
                         ...AppConstants.categoryLabels.entries.map((e) => 
                           Padding(
                             padding: const EdgeInsets.only(right: 8.0),
@@ -162,11 +161,11 @@ class _AdminComponentsScreenState extends State<AdminComponentsScreen> {
             ),
           ],
         ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _showComponentForm(),
-        backgroundColor: Colors.blueGrey[800],
-        child: const Icon(Icons.add, color: Colors.white),
+        floatingActionButton: FloatingActionButton(
+          onPressed: () => _showComponentForm(),
+          backgroundColor: Colors.blueGrey[800],
+          child: const Icon(Icons.add, color: Colors.white),
+        ),
       ),
     );
   }

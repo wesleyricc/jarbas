@@ -73,8 +73,8 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
           'id': v.id,
           'name': v.name,
           'stock': v.stock,
-          'supplierPrice': v.supplierPrice, // NOVO
-          'costPrice': v.costPrice,         // NOVO
+          'supplierPrice': v.supplierPrice, 
+          'costPrice': v.costPrice,         
           'price': v.price,
           'imageUrl': v.imageUrl,
           'newImageBytes': null,
@@ -413,135 +413,138 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text(widget.component == null ? 'Novo Componente' : 'Editar Componente')),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24.0),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _buildImagePreview(),
-              const SizedBox(height: 16),
-              ElevatedButton.icon(
-                onPressed: _pickImage,
-                icon: const Icon(Icons.upload_file),
-                label: const Text('Imagem Principal'),
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.grey[200], foregroundColor: Colors.black87),
-              ),
-              if (_isUploading) LinearProgressIndicator(value: _uploadProgress),
-              
-              const SizedBox(height: 24),
-              DropdownButtonFormField<String>(
-                value: _selectedCategoryKey,
-                hint: const Text('Categoria'),
-                decoration: const InputDecoration(border: OutlineInputBorder(), labelText: 'Categoria'),
-                items: AppConstants.categoryLabels.entries.map((e) => DropdownMenuItem(value: e.key, child: Text(e.value))).toList(),
-                onChanged: (v) => setState(() => _selectedCategoryKey = v),
-                validator: (v) => v == null ? 'Obrigatório' : null,
-              ),
-              const SizedBox(height: 16),
-              TextFormField(controller: _nameController, decoration: const InputDecoration(labelText: 'Nome', border: OutlineInputBorder()), validator: (v) => v!.isEmpty ? 'Obrigatório' : null),
-              const SizedBox(height: 16),
-              TextFormField(controller: _descController, decoration: const InputDecoration(labelText: 'Descrição', border: OutlineInputBorder()), maxLines: 2),
-
-              const SizedBox(height: 24),
-              const Text("Preço Base (Padrão)", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(child: TextFormField(controller: _supplierPriceController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Tabela (R\$)', border: OutlineInputBorder()))),
-                  const SizedBox(width: 8),
-                  Expanded(child: TextFormField(controller: _costPriceController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Custo (R\$)', border: OutlineInputBorder(), filled: true))),
-                  const SizedBox(width: 8),
-                  Expanded(child: TextFormField(controller: _priceController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Venda (R\$)', border: OutlineInputBorder(), filled: true))),
-                ],
-              ),
-
-              const Divider(height: 40),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text("Variações (Cor/Tipo)", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                  TextButton.icon(onPressed: () => _openVariationDialog(), icon: const Icon(Icons.add), label: const Text("Adicionar"))
-                ],
-              ),
-              const SizedBox(height: 8),
-
-              if (_variationsUIList.isEmpty)
+    return GestureDetector(
+      onTap: () => FocusScope.of(context).unfocus(),
+      child: Scaffold(
+        appBar: AppBar(title: Text(widget.component == null ? 'Novo Componente' : 'Editar Componente')),
+        body: SingleChildScrollView(
+          padding: const EdgeInsets.all(24.0),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildImagePreview(),
+                const SizedBox(height: 16),
+                ElevatedButton.icon(
+                  onPressed: _pickImage,
+                  icon: const Icon(Icons.upload_file),
+                  label: const Text('Imagem Principal'),
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.grey[200], foregroundColor: Colors.black87),
+                ),
+                if (_isUploading) LinearProgressIndicator(value: _uploadProgress),
+                
+                const SizedBox(height: 24),
+                DropdownButtonFormField<String>(
+                  value: _selectedCategoryKey,
+                  hint: const Text('Categoria'),
+                  decoration: const InputDecoration(border: OutlineInputBorder(), labelText: 'Categoria'),
+                  items: AppConstants.categoryLabels.entries.map((e) => DropdownMenuItem(value: e.key, child: Text(e.value))).toList(),
+                  onChanged: (v) => setState(() => _selectedCategoryKey = v),
+                  validator: (v) => v == null ? 'Obrigatório' : null,
+                ),
+                const SizedBox(height: 16),
+                TextFormField(controller: _nameController, decoration: const InputDecoration(labelText: 'Nome', border: OutlineInputBorder()), validator: (v) => v!.isEmpty ? 'Obrigatório' : null),
+                const SizedBox(height: 16),
+                TextFormField(controller: _descController, decoration: const InputDecoration(labelText: 'Descrição', border: OutlineInputBorder()), maxLines: 2),
+    
+                const SizedBox(height: 24),
+                const Text("Preço Base (Padrão)", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(child: TextFormField(controller: _supplierPriceController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Tabela (R\$)', border: OutlineInputBorder()))),
+                    const SizedBox(width: 8),
+                    Expanded(child: TextFormField(controller: _costPriceController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Custo (R\$)', border: OutlineInputBorder(), filled: true))),
+                    const SizedBox(width: 8),
+                    Expanded(child: TextFormField(controller: _priceController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Venda (R\$)', border: OutlineInputBorder(), filled: true))),
+                  ],
+                ),
+    
+                const Divider(height: 40),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text("Variações (Cor/Tipo)", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                    TextButton.icon(onPressed: () => _openVariationDialog(), icon: const Icon(Icons.add), label: const Text("Adicionar"))
+                  ],
+                ),
+                const SizedBox(height: 8),
+    
+                if (_variationsUIList.isEmpty)
+                  TextFormField(
+                    controller: _stockController, 
+                    keyboardType: TextInputType.number, 
+                    decoration: const InputDecoration(labelText: 'Estoque Total (Sem Variação)', border: OutlineInputBorder()),
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly]
+                  )
+                else
+                  ListView.separated(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: _variationsUIList.length,
+                    separatorBuilder: (_,__) => const SizedBox(height: 8),
+                    itemBuilder: (context, index) {
+                      final item = _variationsUIList[index];
+                      return Card(
+                        child: ListTile(
+                          leading: Container(
+                            width: 40, height: 40,
+                            decoration: BoxDecoration(color: Colors.grey[200], borderRadius: BorderRadius.circular(4)),
+                            child: item['newImageBytes'] != null 
+                                ? Image.memory(item['newImageBytes'], fit: BoxFit.cover)
+                                : (item['imageUrl'] != null ? Image.network(item['imageUrl'], fit: BoxFit.cover) : const Icon(Icons.image)),
+                          ),
+                          title: Text(item['name'], style: const TextStyle(fontWeight: FontWeight.bold)),
+                          // Mostra resumo do preço
+                          subtitle: Text("Qtd: ${item['stock']} | Venda: R\$ ${item['price'].toStringAsFixed(2)}"),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(icon: const Icon(Icons.edit, color: Colors.blueGrey), onPressed: () => _openVariationDialog(index: index)),
+                              IconButton(icon: const Icon(Icons.delete, color: Colors.red), onPressed: () => _removeVariation(index)),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                
+                if (_variationsUIList.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8.0),
+                    child: Text("Total Estoque: ${_stockController.text}", textAlign: TextAlign.end, style: const TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+    
+                const SizedBox(height: 24),
                 TextFormField(
-                  controller: _stockController, 
-                  keyboardType: TextInputType.number, 
-                  decoration: const InputDecoration(labelText: 'Estoque Total (Sem Variação)', border: OutlineInputBorder()),
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly]
-                )
-              else
-                ListView.separated(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: _variationsUIList.length,
-                  separatorBuilder: (_,__) => const SizedBox(height: 8),
-                  itemBuilder: (context, index) {
-                    final item = _variationsUIList[index];
-                    return Card(
-                      child: ListTile(
-                        leading: Container(
-                          width: 40, height: 40,
-                          decoration: BoxDecoration(color: Colors.grey[200], borderRadius: BorderRadius.circular(4)),
-                          child: item['newImageBytes'] != null 
-                              ? Image.memory(item['newImageBytes'], fit: BoxFit.cover)
-                              : (item['imageUrl'] != null ? Image.network(item['imageUrl'], fit: BoxFit.cover) : const Icon(Icons.image)),
-                        ),
-                        title: Text(item['name'], style: const TextStyle(fontWeight: FontWeight.bold)),
-                        // Mostra resumo do preço
-                        subtitle: Text("Qtd: ${item['stock']} | Venda: R\$ ${item['price'].toStringAsFixed(2)}"),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(icon: const Icon(Icons.edit, color: Colors.blueGrey), onPressed: () => _openVariationDialog(index: index)),
-                            IconButton(icon: const Icon(Icons.delete, color: Colors.red), onPressed: () => _removeVariation(index)),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              
-              if (_variationsUIList.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8.0),
-                  child: Text("Total Estoque: ${_stockController.text}", textAlign: TextAlign.end, style: const TextStyle(fontWeight: FontWeight.bold)),
-                ),
-
-              const SizedBox(height: 24),
-              TextFormField(
-                controller: _supplierLinkController,
-                decoration: const InputDecoration(
-                  labelText: 'Link do Fornecedor', 
-                  border: OutlineInputBorder(), 
-                  suffixIcon: Icon(Icons.link)
-                ),
-              ),
-              if (_supplierLinkController.text.isNotEmpty)
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    onPressed: _launchSupplierLink, 
-                    icon: const Icon(Icons.open_in_new, size: 16), 
-                    label: const Text('Testar Link')
+                  controller: _supplierLinkController,
+                  decoration: const InputDecoration(
+                    labelText: 'Link do Fornecedor', 
+                    border: OutlineInputBorder(), 
+                    suffixIcon: Icon(Icons.link)
                   ),
                 ),
-
-              const SizedBox(height: 32),
-              _isLoading 
-                ? const Center(child: CircularProgressIndicator()) 
-                : ElevatedButton(
-                    onPressed: _saveComponent, 
-                    style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16), backgroundColor: Colors.blueGrey[800], foregroundColor: Colors.white),
-                    child: const Text('SALVAR COMPONENTE', style: TextStyle(fontWeight: FontWeight.bold)),
+                if (_supplierLinkController.text.isNotEmpty)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: _launchSupplierLink, 
+                      icon: const Icon(Icons.open_in_new, size: 16), 
+                      label: const Text('Testar Link')
+                    ),
                   ),
-            ],
+    
+                const SizedBox(height: 32),
+                _isLoading 
+                  ? const Center(child: CircularProgressIndicator()) 
+                  : ElevatedButton(
+                      onPressed: _saveComponent, 
+                      style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16), backgroundColor: Colors.blueGrey[800], foregroundColor: Colors.white),
+                      child: const Text('SALVAR COMPONENTE', style: TextStyle(fontWeight: FontWeight.bold)),
+                    ),
+              ],
+            ),
           ),
         ),
       ),
