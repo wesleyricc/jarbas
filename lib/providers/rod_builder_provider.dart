@@ -9,7 +9,7 @@ import '../utils/app_constants.dart';
 class RodItem {
   final Component component;
   int quantity;
-  String? variation; // Nome da variação selecionada
+  String? variation; 
   
   RodItem({
     required this.component, 
@@ -38,6 +38,9 @@ class RodBuilderProvider extends ChangeNotifier {
   String customizationText = '';
   double _extraLaborCost = 0.0;
   double _totalPrice = 0.0;
+  
+  // Configurações Globais
+  double _globalCustomizationPrice = 0.0; // Valor vindo das configurações
 
   // Getters
   List<RodItem> get selectedBlanksList => _selectedBlanks;
@@ -47,20 +50,18 @@ class RodBuilderProvider extends ChangeNotifier {
   List<RodItem> get selectedAcessoriosList => _selectedAcessorios;
   double get extraLaborCost => _extraLaborCost;
   double get totalPrice => _totalPrice;
+  double get customizationPrice => customizationText.isNotEmpty ? _globalCustomizationPrice : 0.0;
 
-  // --- MÉTODOS PÚBLICOS DE IMAGEM E PREÇO (Para usar na UI) ---
+  // --- MÉTODOS PÚBLICOS DE IMAGEM E PREÇO ---
 
-  /// Retorna a imagem correta (Variação ou Base) para exibição na UI
   String getItemImage(RodItem item) {
     String baseImage = item.component.imageUrl;
-
     if (item.variation != null && item.variation!.isNotEmpty) {
       try {
         final variant = item.component.variations.firstWhere(
           (v) => v.name == item.variation,
           orElse: () => ComponentVariation(id: '', name: '', stock: 0, price: 0.0), 
         );
-        // Se a variação tiver imagem válida, retorna ela
         if (variant.imageUrl != null && variant.imageUrl!.isNotEmpty) {
           return variant.imageUrl!;
         }
@@ -69,7 +70,6 @@ class RodBuilderProvider extends ChangeNotifier {
     return baseImage;
   }
 
-  /// Retorna o preço de VENDA correto (Variação ou Base)
   double getItemPrice(RodItem item) {
     if (item.variation != null && item.variation!.isNotEmpty) {
       try {
@@ -83,17 +83,14 @@ class RodBuilderProvider extends ChangeNotifier {
     return item.component.price;
   }
 
-  /// Retorna o preço de CUSTO correto (Variação ou Base)
   double getItemCost(RodItem item) {
     double baseCost = item.component.costPrice;
-    
     if (item.variation != null && item.variation!.isNotEmpty) {
       try {
         final variant = item.component.variations.firstWhere(
           (v) => v.name == item.variation,
           orElse: () => ComponentVariation(id: '', name: '', stock: 0, price: 0.0), 
         );
-        // Regra: Se variação tem custo > 0, usa ele.
         if (variant.costPrice > 0) return variant.costPrice;
       } catch (e) { /* ignore */ }
     }
@@ -192,6 +189,7 @@ class RodBuilderProvider extends ChangeNotifier {
 
   void setCustomizationText(String text) {
     customizationText = text;
+    _calculateTotalPrice(); // Recalcula, pois a personalização pode ter custo
     notifyListeners();
   }
 
@@ -201,10 +199,22 @@ class RodBuilderProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  // CORREÇÃO: Busca o preço da customização nas configurações
   Future<void> fetchSettings() async {
-    await Future.delayed(Duration.zero); 
+    try {
+      final doc = await FirebaseFirestore.instance.collection('settings').doc('global_config').get();
+      if (doc.exists && doc.data() != null) {
+        final data = doc.data()!;
+        _globalCustomizationPrice = (data['customizationPrice'] ?? 0.0).toDouble();
+        _calculateTotalPrice(); // Recalcula caso já existam itens
+        notifyListeners();
+      }
+    } catch (e) {
+      print("Erro ao buscar configurações: $e");
+    }
   }
 
+  // CORREÇÃO: Adiciona o custo da personalização ao total
   void _calculateTotalPrice() {
     double total = 0.0;
     
@@ -220,7 +230,12 @@ class RodBuilderProvider extends ChangeNotifier {
     total += sumList(_selectedPassadores);
     total += sumList(_selectedAcessorios);
     
-    total += _extraLaborCost; 
+    total += _extraLaborCost;
+    
+    // Soma o custo da personalização se houver texto
+    if (customizationText.isNotEmpty) {
+      total += _globalCustomizationPrice;
+    }
 
     _totalPrice = total;
   }
@@ -235,6 +250,7 @@ class RodBuilderProvider extends ChangeNotifier {
     customizationText = '';
     _extraLaborCost = 0.0;
     _totalPrice = 0.0;
+    // Não zera _globalCustomizationPrice, pois é uma configuração do sistema
     notifyListeners();
   }
   
@@ -290,7 +306,7 @@ class RodBuilderProvider extends ChangeNotifier {
         'name': item.component.name,
         'variation': item.variation,
         'quantity': item.quantity,
-        'imageUrl': getItemImage(item), // Agora usa o método público
+        'imageUrl': getItemImage(item), 
         'costPrice': getItemCost(item), 
         'price': getItemPrice(item), 
       }).toList();

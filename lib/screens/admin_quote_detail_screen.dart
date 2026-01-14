@@ -3,9 +3,11 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
+import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
 import '../models/quote_model.dart';
 import '../services/storage_service.dart';
-import '../services/whatsapp_service.dart'; // Importação do Serviço
+import '../services/whatsapp_service.dart';
+import '../services/quote_service.dart';
 import '../utils/app_constants.dart';
 
 class AdminQuoteDetailScreen extends StatefulWidget {
@@ -28,8 +30,15 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
   bool _isFetchingCosts = false;
   bool _isUploadingImage = false;
   
+  // CONTROLADOR DE TEXTO
+  late TextEditingController _customizationController;
+
+  // PREÇO CONFIGURADO
+  double _globalCustomizationPrice = 0.0;
+
   final NumberFormat _currencyFormat = NumberFormat.simpleCurrency(locale: 'pt_BR');
   final StorageService _storageService = StorageService();
+  final QuoteService _quoteService = QuoteService();
 
   final Map<String, String> _sectionCategoryMap = {
     'Blanks': AppConstants.catBlank,
@@ -52,9 +61,36 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
   void initState() {
     super.initState();
     _localQuote = widget.quote;
+    
+    // INICIALIZA O CONTROLADOR
+    _customizationController = TextEditingController(text: _localQuote.customizationText);
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _fetchMissingData();
+      _fetchSettings(); 
     });
+  }
+
+  @override
+  void dispose() {
+    _customizationController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _fetchSettings() async {
+    try {
+      final doc = await FirebaseFirestore.instance.collection('settings').doc('global_config').get();
+      if (doc.exists && doc.data() != null) {
+        setState(() {
+          _globalCustomizationPrice = (doc.data()!['customizationPrice'] ?? 0.0).toDouble();
+        });
+        if (_customizationController.text.isNotEmpty) {
+          _recalculateTotal(); 
+        }
+      }
+    } catch (e) {
+      print("Erro ao buscar configurações: $e");
+    }
   }
 
   Future<void> _fetchMissingData() async {
@@ -146,6 +182,296 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
     if (mounted) setState(() => _isFetchingCosts = false);
   }
 
+  // --- LÓGICA DE DUPLICAR ORÇAMENTO ---
+
+  void _showDuplicateDialog() {
+    final nameCtrl = TextEditingController();
+    final phoneCtrl = TextEditingController();
+    final cityCtrl = TextEditingController();
+    final stateCtrl = TextEditingController();
+    
+    bool updatePrices = false;
+
+    var phoneMask = MaskTextInputFormatter(
+      mask: '(##) #####-####', 
+      filter: { "#": RegExp(r'[0-9]') },
+      type: MaskAutoCompletionType.lazy
+    );
+    
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            return AlertDialog(
+              title: const Text("Copiar Orçamento"),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text("Informe os dados do novo cliente para criar uma cópia deste orçamento."),
+                    const SizedBox(height: 16),
+                    TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: "Nome do Cliente", border: OutlineInputBorder())),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: phoneCtrl, 
+                      keyboardType: TextInputType.phone, 
+                      inputFormatters: [phoneMask], 
+                      decoration: const InputDecoration(labelText: "Telefone", border: OutlineInputBorder())
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(child: TextField(controller: cityCtrl, decoration: const InputDecoration(labelText: "Cidade", border: OutlineInputBorder()))),
+                        const SizedBox(width: 8),
+                        SizedBox(width: 80, child: TextField(controller: stateCtrl, decoration: const InputDecoration(labelText: "UF", border: OutlineInputBorder()))),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    CheckboxListTile(
+                      title: const Text("Atualizar preços para o valor atual?", style: TextStyle(fontSize: 14)),
+                      subtitle: const Text("Se marcado, busca os preços atuais do catálogo. Se desmarcado, mantém os preços originais.", style: TextStyle(fontSize: 11)),
+                      value: updatePrices,
+                      onChanged: (val) {
+                        setStateDialog(() {
+                          updatePrices = val ?? false;
+                        });
+                      },
+                      contentPadding: EdgeInsets.zero,
+                      controlAffinity: ListTileControlAffinity.leading,
+                    )
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancelar")),
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.copy),
+                  label: const Text("Criar Cópia"),
+                  onPressed: () async {
+                    if (nameCtrl.text.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Informe o nome do cliente.")));
+                      return;
+                    }
+                    Navigator.pop(ctx);
+                    await _duplicateQuote(
+                      nameCtrl.text, 
+                      phoneCtrl.text, 
+                      cityCtrl.text, 
+                      stateCtrl.text, 
+                      updatePrices
+                    );
+                  },
+                )
+              ],
+            );
+          }
+        );
+      },
+    );
+  }
+
+  Future<void> _duplicateQuote(String name, String phone, String city, String state, bool updatePrices) async {
+    setState(() => _isLoading = true);
+    try {
+      List<Map<String, dynamic>> newBlanks = _cloneList(_localQuote.blanksList);
+      List<Map<String, dynamic>> newCabos = _cloneList(_localQuote.cabosList);
+      List<Map<String, dynamic>> newReelSeats = _cloneList(_localQuote.reelSeatsList);
+      List<Map<String, dynamic>> newPassadores = _cloneList(_localQuote.passadoresList);
+      List<Map<String, dynamic>> newAcessorios = _cloneList(_localQuote.acessoriosList);
+
+      if (updatePrices) {
+        await _updateListPrices(newBlanks);
+        await _updateListPrices(newCabos);
+        await _updateListPrices(newReelSeats);
+        await _updateListPrices(newPassadores);
+        await _updateListPrices(newAcessorios);
+      }
+
+      double customizationCost = (_localQuote.customizationText != null && _localQuote.customizationText!.isNotEmpty) 
+          ? _globalCustomizationPrice 
+          : 0.0;
+
+      double newTotal = _calculateTotalFromLists([newBlanks, newCabos, newReelSeats, newPassadores, newAcessorios]) 
+          + _localQuote.extraLaborCost 
+          + customizationCost;
+
+      final newQuote = Quote(
+        userId: _localQuote.userId,
+        status: AppConstants.statusRascunho,
+        createdAt: Timestamp.now(),
+        clientName: name,
+        clientPhone: phone,
+        clientCity: city,
+        clientState: state,
+        blanksList: newBlanks,
+        cabosList: newCabos,
+        reelSeatsList: newReelSeats,
+        passadoresList: newPassadores,
+        acessoriosList: newAcessorios,
+        extraLaborCost: _localQuote.extraLaborCost,
+        totalPrice: newTotal,
+        customizationText: _localQuote.customizationText,
+        finishedImages: [],
+      );
+
+      await _quoteService.saveQuote(newQuote);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Orçamento copiado com sucesso!"), backgroundColor: Colors.green)
+        );
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Erro ao copiar: $e"), backgroundColor: Colors.red));
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  List<Map<String, dynamic>> _cloneList(List<Map<String, dynamic>> source) {
+    return source.map((item) => Map<String, dynamic>.from(item)).toList();
+  }
+
+  Future<void> _updateListPrices(List<Map<String, dynamic>> items) async {
+    final db = FirebaseFirestore.instance;
+    for (var item in items) {
+      if (item['id'] != null && item['id'].toString().isNotEmpty) {
+        try {
+          final doc = await db.collection(AppConstants.colComponents).doc(item['id']).get();
+          if (doc.exists && doc.data() != null) {
+            final data = doc.data()!;
+            
+            double basePrice = (data['price'] is num) ? (data['price'] as num).toDouble() : 0.0;
+            double baseCost = (data['costPrice'] is num) ? (data['costPrice'] as num).toDouble() : 0.0;
+            
+            double finalPrice = basePrice;
+            double finalCost = baseCost;
+
+            final variationName = item['variation'];
+            if (variationName != null && variationName.toString().isNotEmpty) {
+              List<dynamic> variations = data['variations'] ?? [];
+              final variationMatch = variations.firstWhere(
+                (v) => v['name'] == variationName, 
+                orElse: () => null
+              );
+
+              if (variationMatch != null) {
+                double vPrice = (variationMatch['price'] is num) ? (variationMatch['price'] as num).toDouble() : 0.0;
+                double vCost = (variationMatch['costPrice'] is num) ? (variationMatch['costPrice'] as num).toDouble() : 0.0;
+                
+                if (vPrice > 0) finalPrice = vPrice;
+                if (vCost > 0) finalCost = vCost; 
+                else finalCost = baseCost;
+              }
+            }
+
+            item['price'] = finalPrice;
+            item['costPrice'] = finalCost;
+          }
+        } catch (e) {
+          print("Erro ao atualizar preço do item ${item['name']}: $e");
+        }
+      }
+    }
+  }
+
+  double _calculateTotalFromLists(List<List<Map<String, dynamic>>> allLists) {
+    double total = 0.0;
+    for (var list in allLists) {
+      for (var item in list) {
+        final qty = (item['quantity'] ?? 1) as int;
+        final price = (item['price'] ?? 0.0) as double;
+        total += (price * qty);
+      }
+    }
+    return total;
+  }
+
+  // --- LÓGICA DE EDITAR CLIENTE ---
+
+  void _showEditClientDialog() {
+    final nameCtrl = TextEditingController(text: _localQuote.clientName);
+    final phoneCtrl = TextEditingController(text: _localQuote.clientPhone);
+    final cityCtrl = TextEditingController(text: _localQuote.clientCity);
+    final stateCtrl = TextEditingController(text: _localQuote.clientState);
+
+    var phoneMask = MaskTextInputFormatter(
+      mask: '(##) #####-####', 
+      filter: { "#": RegExp(r'[0-9]') },
+      type: MaskAutoCompletionType.lazy
+    );
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Editar Dados do Cliente"),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameCtrl,
+                decoration: const InputDecoration(labelText: "Nome do Cliente", border: OutlineInputBorder()),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: phoneCtrl,
+                keyboardType: TextInputType.phone,
+                inputFormatters: [phoneMask],
+                decoration: const InputDecoration(labelText: "Telefone", border: OutlineInputBorder()),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: cityCtrl,
+                      decoration: const InputDecoration(labelText: "Cidade", border: OutlineInputBorder()),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    width: 80,
+                    child: TextField(
+                      controller: stateCtrl,
+                      decoration: const InputDecoration(labelText: "UF", border: OutlineInputBorder()),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Cancelar"),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              if (nameCtrl.text.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("O nome é obrigatório.")));
+                return;
+              }
+              _updateClientData(
+                name: nameCtrl.text,
+                phone: phoneCtrl.text,
+                city: cityCtrl.text,
+                state: stateCtrl.text,
+              );
+              Navigator.pop(ctx);
+            },
+            child: const Text("Atualizar"),
+          )
+        ],
+      ),
+    );
+  }
+
   // --- UPLOAD IMAGEM ---
   Future<void> _uploadProductionImage() async {
     final ImagePicker picker = ImagePicker();
@@ -235,6 +561,20 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
     }
   }
 
+  void _updateClientData({String? name, String? phone, String? city, String? state}) {
+    setState(() {
+      _localQuote = Quote(
+        id: widget.quoteId, userId: _localQuote.userId, status: _localQuote.status, createdAt: _localQuote.createdAt,
+        clientName: name ?? _localQuote.clientName,
+        clientPhone: phone ?? _localQuote.clientPhone,
+        clientCity: city ?? _localQuote.clientCity,
+        clientState: state ?? _localQuote.clientState,
+        blanksList: _localQuote.blanksList, cabosList: _localQuote.cabosList, reelSeatsList: _localQuote.reelSeatsList, passadoresList: _localQuote.passadoresList, acessoriosList: _localQuote.acessoriosList,
+        extraLaborCost: _localQuote.extraLaborCost, totalPrice: _localQuote.totalPrice, customizationText: _localQuote.customizationText, finishedImages: _localQuote.finishedImages,
+      );
+    });
+  }
+
   void _recalculateTotal() {
     double total = 0.0;
     
@@ -253,13 +593,18 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
     total += sumList(_localQuote.acessoriosList);
     total += _localQuote.extraLaborCost;
 
+    if (_customizationController.text.isNotEmpty) {
+      total += _globalCustomizationPrice;
+    }
+
     setState(() {
       _localQuote = Quote(
         id: widget.quoteId, userId: _localQuote.userId, status: _localQuote.status, createdAt: _localQuote.createdAt,
         clientName: _localQuote.clientName, clientPhone: _localQuote.clientPhone, clientCity: _localQuote.clientCity, clientState: _localQuote.clientState,
         blanksList: _localQuote.blanksList, cabosList: _localQuote.cabosList, reelSeatsList: _localQuote.reelSeatsList, passadoresList: _localQuote.passadoresList, acessoriosList: _localQuote.acessoriosList,
         extraLaborCost: _localQuote.extraLaborCost, totalPrice: total, 
-        customizationText: _localQuote.customizationText, finishedImages: _localQuote.finishedImages,
+        customizationText: _customizationController.text, 
+        finishedImages: _localQuote.finishedImages,
       );
     });
   }
@@ -279,6 +624,16 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
 
   Future<void> _saveChanges({bool silent = false, String? customMessage}) async {
     if (!silent) setState(() => _isLoading = true);
+    
+    _localQuote = Quote(
+      id: widget.quoteId, userId: _localQuote.userId, status: _localQuote.status, createdAt: _localQuote.createdAt,
+      clientName: _localQuote.clientName, clientPhone: _localQuote.clientPhone, clientCity: _localQuote.clientCity, clientState: _localQuote.clientState,
+      blanksList: _localQuote.blanksList, cabosList: _localQuote.cabosList, reelSeatsList: _localQuote.reelSeatsList, passadoresList: _localQuote.passadoresList, acessoriosList: _localQuote.acessoriosList,
+      extraLaborCost: _localQuote.extraLaborCost, totalPrice: _localQuote.totalPrice, 
+      customizationText: _customizationController.text, // Garante que salva o que está no campo
+      finishedImages: _localQuote.finishedImages,
+    );
+
     try {
       await FirebaseFirestore.instance
           .collection(AppConstants.colQuotes) 
@@ -299,7 +654,6 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
     }
   }
 
-  // --- WHATSAPP ---
   Future<void> _shareOnWhatsApp() async {
     try {
       await WhatsAppService.sendQuoteToClient(_localQuote);
@@ -434,8 +788,13 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
 
     double labor = _localQuote.extraLaborCost;
     double totalSale = _localQuote.totalPrice;
+    
     double profit = totalSale - totalCost; 
     double margin = totalSale > 0 ? (profit / totalSale) * 100 : 0.0;
+
+    double customCost = (_customizationController.text.isNotEmpty) 
+        ? _globalCustomizationPrice 
+        : 0.0;
 
     return Container(
       margin: const EdgeInsets.only(top: 24),
@@ -477,6 +836,16 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
               Text(_currencyFormat.format(labor), style: const TextStyle(color: Colors.lightBlueAccent, fontWeight: FontWeight.bold)),
             ],
           ),
+          if (customCost > 0) ...[
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text("Personalização (Gravação):", style: TextStyle(color: Colors.white70)),
+                Text(_currencyFormat.format(customCost), style: const TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold)),
+              ],
+            ),
+          ],
           const Divider(color: Colors.white12, height: 24),
           
           Row(
@@ -636,7 +1005,7 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
                                     icon: Icon(qty == 1 ? Icons.delete_outline : Icons.remove, size: 18, color: qty == 1 ? Colors.red : Colors.grey[700]),
                                     onPressed: () => _updateQuantity(items, index, -1),
                                   ),
-                                  Text("$qty", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                                  Text("$qty", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black87)),
                                   IconButton(
                                     padding: EdgeInsets.zero,
                                     visualDensity: VisualDensity.compact,
@@ -682,6 +1051,11 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
         iconTheme: const IconThemeData(color: Colors.black87),
         actions: [
           IconButton(
+            icon: const Icon(Icons.copy, color: Colors.blueGrey),
+            onPressed: _showDuplicateDialog,
+            tooltip: 'Copiar para novo Cliente',
+          ),
+          IconButton(
             icon: const Icon(Icons.share, color: Colors.green),
             onPressed: _shareOnWhatsApp,
             tooltip: 'Enviar para Cliente',
@@ -706,7 +1080,7 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
                       borderRadius: BorderRadius.circular(12),
                       boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 2))]
                     ),
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.all(20),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -714,30 +1088,37 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
                           children: [
                             const Icon(Icons.person, color: Colors.blueGrey),
                             const SizedBox(width: 8),
-                            Expanded(child: Text(_localQuote.clientName, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
+                            Expanded(child: Text(_localQuote.clientName.toUpperCase(), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87))),
+                            IconButton(icon: const Icon(Icons.edit, size: 20, color: Colors.blueGrey), onPressed: _showEditClientDialog, tooltip: 'Editar Dados do Cliente'),
+                            const SizedBox(width: 8),
                             GestureDetector(
                               onTap: _changeStatus,
                               child: Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: statusColor.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(20),
-                                  border: Border.all(color: statusColor.withOpacity(0.5))
-                                ),
+                                decoration: BoxDecoration(color: statusColor.withOpacity(0.1), borderRadius: BorderRadius.circular(20), border: Border.all(color: statusColor.withOpacity(0.5))),
                                 child: Text(_localQuote.status.toUpperCase(), style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: statusColor)),
                               ),
                             )
                           ],
                         ),
-                        const SizedBox(height: 4),
-                         Padding(
-                          padding: const EdgeInsets.only(left: 32),
-                          child: Text("${_localQuote.clientCity} - ${_localQuote.clientState}", style: TextStyle(color: Colors.grey[600])),
+                        const Divider(height: 24),
+                        Row(
+                          children: [
+                            const Icon(Icons.phone, size: 16, color: Colors.grey),
+                            const SizedBox(width: 8),
+                            Text(_localQuote.clientPhone, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: Colors.black45)),
+                          ],
                         ),
-                        Padding(
-                          padding: const EdgeInsets.only(left: 32, top: 2),
-                          child: Text(DateFormat("'Data:' dd/MM/yyyy 'às' HH:mm").format(_localQuote.createdAt.toDate()), style: TextStyle(color: Colors.grey[500], fontSize: 12)),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            const Icon(Icons.location_on, size: 16, color: Colors.grey),
+                            const SizedBox(width: 8),
+                            Text("${_localQuote.clientCity} - ${_localQuote.clientState}", style: const TextStyle(fontSize: 15, color: Colors.black45)),
+                          ],
                         ),
+                        const SizedBox(height: 12),
+                        Text(DateFormat("'Criado em:' dd/MM/yyyy 'às' HH:mm").format(_localQuote.createdAt.toDate()), style: TextStyle(color: Colors.grey[500], fontSize: 12)),
                       ],
                     ),
                   ),
@@ -790,15 +1171,12 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
                         ),
                         const Divider(height: 30),
                         TextField(
-                          controller: TextEditingController(text: _localQuote.customizationText),
+                          controller: _customizationController,
                           maxLines: 3,
+                          // CORREÇÃO: COR DO TEXTO DEFINIDA COMO PRETO
+                          style: const TextStyle(color: Colors.black87, fontSize: 15),
                           onChanged: (val) {
-                             _localQuote = Quote(
-                                id: widget.quoteId, userId: _localQuote.userId, status: _localQuote.status, createdAt: _localQuote.createdAt, clientName: _localQuote.clientName, clientPhone: _localQuote.clientPhone, clientCity: _localQuote.clientCity, clientState: _localQuote.clientState,
-                                blanksList: _localQuote.blanksList, cabosList: _localQuote.cabosList, reelSeatsList: _localQuote.reelSeatsList, passadoresList: _localQuote.passadoresList, acessoriosList: _localQuote.acessoriosList,
-                                extraLaborCost: _localQuote.extraLaborCost, totalPrice: _localQuote.totalPrice, customizationText: val, 
-                                finishedImages: _localQuote.finishedImages,
-                            );
+                             _recalculateTotal();
                           },
                           decoration: InputDecoration(
                             labelText: 'Notas de Customização',
@@ -814,7 +1192,6 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
                   ),
 
                   _buildFinancialSummaryCard(),
-                  
                   _buildProductionGallery(),
 
                   const SizedBox(height: 40),
@@ -945,8 +1322,8 @@ class _ComponentSelectorModalState extends State<ComponentSelectorModal> {
                             child: (data['imageUrl'] == null || data['imageUrl'].toString().isEmpty) 
                                 ? const Icon(Icons.image_not_supported, color: Colors.grey) : null,
                           ),
-                          title: Text(data['name'] ?? 'Sem nome', style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.black87)),
-                          subtitle: Text("R\$ ${_currencyFormat.format(basePrice).replaceAll('R\$', '')}  •  Est: ${data['stock'] ?? 0}", style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.black45)),
+                          title: Text(data['name'] ?? 'Sem nome', style: const TextStyle(fontWeight: FontWeight.w600)),
+                          subtitle: Text("R\$ ${_currencyFormat.format(basePrice).replaceAll('R\$', '')}  •  Est: ${data['stock'] ?? 0}"),
                           children: [
                             ListTile(
                               title: const Text("Selecionar Padrão"),
@@ -974,6 +1351,7 @@ class _ComponentSelectorModalState extends State<ComponentSelectorModal> {
                                 double vCostRaw = (vMap['costPrice'] is num) ? (vMap['costPrice'] as num).toDouble() : 0.0;
                                 final vCost = (vCostRaw > 0) ? vCostRaw : baseCost;
 
+                                // LÓGICA DE IMAGEM DA VARIAÇÃO
                                 final vImg = vMap['imageUrl']; 
                                 final hasVarImg = vImg != null && vImg.toString().isNotEmpty;
                                 final selectedImg = hasVarImg ? vImg : data['imageUrl'];
@@ -990,8 +1368,8 @@ class _ComponentSelectorModalState extends State<ComponentSelectorModal> {
                                         )
                                       )
                                     : const Icon(Icons.subdirectory_arrow_right, size: 16),
-                                  title: Text(vName, style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.black45)),
-                                  trailing: Text(_currencyFormat.format(vPrice), style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.black45)),
+                                  title: Text(vName),
+                                  trailing: Text(_currencyFormat.format(vPrice)),
                                   onTap: () {
                                     widget.onSelected({
                                       'id': filteredDocs[index].id,
