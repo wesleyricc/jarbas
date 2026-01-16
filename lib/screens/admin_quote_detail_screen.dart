@@ -9,6 +9,7 @@ import '../services/storage_service.dart';
 import '../services/whatsapp_service.dart';
 import '../services/quote_service.dart';
 import '../utils/app_constants.dart';
+import '../services/pdf_service.dart';
 
 class AdminQuoteDetailScreen extends StatefulWidget {
   final Quote quote;
@@ -30,10 +31,7 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
   bool _isFetchingCosts = false;
   bool _isUploadingImage = false;
   
-  // CONTROLADOR DE TEXTO
   late TextEditingController _customizationController;
-
-  // PREÇO CONFIGURADO
   double _globalCustomizationPrice = 0.0;
 
   final NumberFormat _currencyFormat = NumberFormat.simpleCurrency(locale: 'pt_BR');
@@ -48,8 +46,10 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
     'Acessórios': AppConstants.catAcessorios,
   };
 
+  // ADICIONADO O STATUS 'ENVIADO' AQUI
   final Map<String, Color> _statusColors = {
     AppConstants.statusPendente: Colors.orange,
+    AppConstants.statusEnviado: Colors.cyan, // Novo Status
     AppConstants.statusAprovado: Colors.blue,
     AppConstants.statusProducao: Colors.purple,
     AppConstants.statusConcluido: Colors.green,
@@ -57,12 +57,16 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
     AppConstants.statusRascunho: Colors.grey,
   };
 
+  final Set<String> _statusesThatDeductStock = {
+    AppConstants.statusAprovado,
+    AppConstants.statusProducao,
+    AppConstants.statusConcluido,
+  };
+
   @override
   void initState() {
     super.initState();
     _localQuote = widget.quote;
-    
-    // INICIALIZA O CONTROLADOR
     _customizationController = TextEditingController(text: _localQuote.customizationText);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -80,6 +84,8 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
   Future<void> _fetchSettings() async {
     try {
       final doc = await FirebaseFirestore.instance.collection('settings').doc('global_config').get();
+      if (!mounted) return; 
+
       if (doc.exists && doc.data() != null) {
         setState(() {
           _globalCustomizationPrice = (doc.data()!['customizationPrice'] ?? 0.0).toDouble();
@@ -95,7 +101,7 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
 
   Future<void> _fetchMissingData() async {
     if (_isFetchingCosts) return;
-    setState(() => _isFetchingCosts = true);
+    if (mounted) setState(() => _isFetchingCosts = true);
 
     bool hasUpdates = false;
     final db = FirebaseFirestore.instance;
@@ -103,6 +109,11 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
     Future<void> processList(List<Map<String, dynamic>> items) async {
       for (var item in items) {
         final currentCost = (item['costPrice'] ?? item['cost'] ?? 0.0) as num;
+        
+        if (item['originalPrice'] == null) {
+           item['originalPrice'] = item['price'];
+        }
+
         final currentImage = item['imageUrl'] as String?;
         final hasVariation = item['variation'] != null && item['variation'].toString().isNotEmpty;
         
@@ -175,23 +186,82 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
     await processList(_localQuote.passadoresList);
     await processList(_localQuote.acessoriosList);
 
-    if (hasUpdates && mounted) {
+    if (mounted && hasUpdates) {
       setState(() {});
     }
     
     if (mounted) setState(() => _isFetchingCosts = false);
   }
 
-  // --- LÓGICA DE DUPLICAR ORÇAMENTO ---
+  // --- GERENCIAMENTO DE ESTOQUE ---
+  Future<void> _handleStockChange(String oldStatus, String newStatus) async {
+    bool oldDeducts = _statusesThatDeductStock.contains(oldStatus);
+    bool newDeducts = _statusesThatDeductStock.contains(newStatus);
 
+    if (!oldDeducts && newDeducts) {
+      await _processStockTransaction(isDeducting: true);
+    }
+    else if (oldDeducts && !newDeducts) {
+      await _processStockTransaction(isDeducting: false);
+    }
+  }
+
+  Future<void> _processStockTransaction({required bool isDeducting}) async {
+    final db = FirebaseFirestore.instance;
+    int multiplier = isDeducting ? -1 : 1;
+
+    Future<void> updateList(List<Map<String, dynamic>> items) async {
+      for (var item in items) {
+        String? componentId = item['id'];
+        int qty = (item['quantity'] ?? 1) as int;
+        String? variationName = item['variation'];
+
+        if (componentId == null || componentId.isEmpty) continue;
+
+        try {
+          await db.runTransaction((transaction) async {
+            DocumentReference docRef = db.collection(AppConstants.colComponents).doc(componentId);
+            DocumentSnapshot snapshot = await transaction.get(docRef);
+
+            if (!snapshot.exists) return;
+
+            Map<String, dynamic> data = snapshot.data() as Map<String, dynamic>;
+
+            if (variationName != null && variationName.isNotEmpty) {
+              List<dynamic> variations = List.from(data['variations'] ?? []);
+              int index = variations.indexWhere((v) => v['name'] == variationName);
+
+              if (index != -1) {
+                int currentStock = (variations[index]['stock'] ?? 0) as int;
+                variations[index]['stock'] = currentStock + (qty * multiplier);
+                transaction.update(docRef, {'variations': variations});
+              }
+            } 
+            else {
+              int currentStock = (data['stock'] ?? 0) as int;
+              transaction.update(docRef, {'stock': currentStock + (qty * multiplier)});
+            }
+          });
+        } catch (e) {
+          print("Erro ao atualizar estoque do item ${item['name']}: $e");
+        }
+      }
+    }
+
+    await updateList(_localQuote.blanksList);
+    await updateList(_localQuote.cabosList);
+    await updateList(_localQuote.reelSeatsList);
+    await updateList(_localQuote.passadoresList);
+    await updateList(_localQuote.acessoriosList);
+  }
+
+  // --- LÓGICA DE DUPLICAR ORÇAMENTO ---
   void _showDuplicateDialog() {
     final nameCtrl = TextEditingController();
     final phoneCtrl = TextEditingController();
     final cityCtrl = TextEditingController();
     final stateCtrl = TextEditingController();
-    
     bool updatePrices = false;
-
     var phoneMask = MaskTextInputFormatter(
       mask: '(##) #####-####', 
       filter: { "#": RegExp(r'[0-9]') },
@@ -213,12 +283,7 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
                     const SizedBox(height: 16),
                     TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: "Nome do Cliente", border: OutlineInputBorder())),
                     const SizedBox(height: 8),
-                    TextField(
-                      controller: phoneCtrl, 
-                      keyboardType: TextInputType.phone, 
-                      inputFormatters: [phoneMask], 
-                      decoration: const InputDecoration(labelText: "Telefone", border: OutlineInputBorder())
-                    ),
+                    TextField(controller: phoneCtrl, keyboardType: TextInputType.phone, inputFormatters: [phoneMask], decoration: const InputDecoration(labelText: "Telefone", border: OutlineInputBorder())),
                     const SizedBox(height: 8),
                     Row(
                       children: [
@@ -254,13 +319,7 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
                       return;
                     }
                     Navigator.pop(ctx);
-                    await _duplicateQuote(
-                      nameCtrl.text, 
-                      phoneCtrl.text, 
-                      cityCtrl.text, 
-                      stateCtrl.text, 
-                      updatePrices
-                    );
+                    await _duplicateQuote(nameCtrl.text, phoneCtrl.text, cityCtrl.text, stateCtrl.text, updatePrices);
                   },
                 )
               ],
@@ -272,7 +331,10 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
   }
 
   Future<void> _duplicateQuote(String name, String phone, String city, String state, bool updatePrices) async {
-    setState(() => _isLoading = true);
+    final messenger = ScaffoldMessenger.of(context);
+    
+    if (mounted) setState(() => _isLoading = true);
+    
     try {
       List<Map<String, dynamic>> newBlanks = _cloneList(_localQuote.blanksList);
       List<Map<String, dynamic>> newCabos = _cloneList(_localQuote.cabosList);
@@ -295,6 +357,15 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
       double newTotal = _calculateTotalFromLists([newBlanks, newCabos, newReelSeats, newPassadores, newAcessorios]) 
           + _localQuote.extraLaborCost 
           + customizationCost;
+      
+      // Aplica desconto geral
+      double discountVal = 0.0;
+      if (_localQuote.generalDiscountType == 'percent') {
+        discountVal = newTotal * (_localQuote.generalDiscount / 100);
+      } else {
+        discountVal = _localQuote.generalDiscount;
+      }
+      newTotal -= discountVal;
 
       final newQuote = Quote(
         userId: _localQuote.userId,
@@ -311,6 +382,8 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
         acessoriosList: newAcessorios,
         extraLaborCost: _localQuote.extraLaborCost,
         totalPrice: newTotal,
+        generalDiscount: _localQuote.generalDiscount,
+        generalDiscountType: _localQuote.generalDiscountType,
         customizationText: _localQuote.customizationText,
         finishedImages: [],
       );
@@ -318,14 +391,14 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
       await _quoteService.saveQuote(newQuote);
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        messenger.showSnackBar(
           const SnackBar(content: Text("Orçamento copiado com sucesso!"), backgroundColor: Colors.green)
         );
         Navigator.pop(context);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Erro ao copiar: $e"), backgroundColor: Colors.red));
+        messenger.showSnackBar(SnackBar(content: Text("Erro ao copiar: $e"), backgroundColor: Colors.red));
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -354,10 +427,7 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
             final variationName = item['variation'];
             if (variationName != null && variationName.toString().isNotEmpty) {
               List<dynamic> variations = data['variations'] ?? [];
-              final variationMatch = variations.firstWhere(
-                (v) => v['name'] == variationName, 
-                orElse: () => null
-              );
+              final variationMatch = variations.firstWhere((v) => v['name'] == variationName, orElse: () => null);
 
               if (variationMatch != null) {
                 double vPrice = (variationMatch['price'] is num) ? (variationMatch['price'] as num).toDouble() : 0.0;
@@ -370,6 +440,8 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
             }
 
             item['price'] = finalPrice;
+            item['originalPrice'] = finalPrice; 
+            item['discountInfo'] = null;
             item['costPrice'] = finalCost;
           }
         } catch (e) {
@@ -391,8 +463,222 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
     return total;
   }
 
-  // --- LÓGICA DE EDITAR CLIENTE ---
+  // --- LÓGICA DE DESCONTO NO ITEM (3 OPÇÕES) ---
+  void _showDiscountDialog(Map<String, dynamic> item, Function() onUpdate) {
+    double originalPrice = (item['originalPrice'] ?? item['price'] ?? 0.0).toDouble();
+    if (originalPrice == 0) originalPrice = (item['price'] ?? 0.0).toDouble();
 
+    final valueController = TextEditingController();
+    
+    int selectedMode = 0; 
+
+    if (item['discountInfo'] != null) {
+      if (item['discountInfo']['type'] == 'percent') {
+        selectedMode = 1;
+      } else {
+        selectedMode = 0; 
+      }
+      valueController.text = item['discountInfo']['value'].toString();
+    }
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            String labelText = 'Valor do Desconto (R\$)';
+            if (selectedMode == 1) labelText = 'Porcentagem (%)';
+            if (selectedMode == 2) labelText = 'Valor Final Desejado (R\$)';
+
+            return AlertDialog(
+              title: Text("Desconto: ${item['name']}", style: const TextStyle(fontSize: 16)),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text("Preço Original: ${_currencyFormat.format(originalPrice)}"),
+                  const SizedBox(height: 16),
+                  
+                  ToggleButtons(
+                    borderRadius: BorderRadius.circular(8),
+                    isSelected: [selectedMode == 0, selectedMode == 1, selectedMode == 2],
+                    onPressed: (index) {
+                      setStateDialog(() {
+                        selectedMode = index;
+                        valueController.clear();
+                      });
+                    },
+                    children: const [
+                      Padding(padding: EdgeInsets.symmetric(horizontal: 12), child: Text("(-) R\$")),
+                      Padding(padding: EdgeInsets.symmetric(horizontal: 12), child: Text("%")),
+                      Padding(padding: EdgeInsets.symmetric(horizontal: 12), child: Text("(=) R\$")),
+                    ],
+                  ),
+                  
+                  const SizedBox(height: 16),
+
+                  TextField(
+                    controller: valueController,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: InputDecoration(
+                      labelText: labelText,
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    item['price'] = originalPrice;
+                    item['originalPrice'] = originalPrice;
+                    item['discountInfo'] = null;
+                    onUpdate();
+                    Navigator.pop(ctx);
+                  }, 
+                  child: const Text("Remover", style: TextStyle(color: Colors.red))
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    double val = double.tryParse(valueController.text.replaceAll(',', '.')) ?? 0.0;
+                    if (val < 0) val = 0;
+
+                    double newPrice = originalPrice;
+                    String type = 'fixed';
+                    double storedValue = val;
+
+                    if (selectedMode == 0) { 
+                      if (val > originalPrice) val = originalPrice;
+                      newPrice = originalPrice - val;
+                      type = 'fixed';
+                      storedValue = val;
+                    } 
+                    else if (selectedMode == 1) { 
+                      if (val > 100) val = 100;
+                      newPrice = originalPrice - (originalPrice * (val / 100));
+                      type = 'percent';
+                      storedValue = val;
+                    } 
+                    else if (selectedMode == 2) { 
+                      if (val > originalPrice) val = originalPrice;
+                      newPrice = val;
+                      type = 'fixed'; 
+                      storedValue = originalPrice - val; 
+                    }
+
+                    item['originalPrice'] = originalPrice;
+                    item['price'] = newPrice;
+                    item['discountInfo'] = {
+                      'type': type,
+                      'value': storedValue
+                    };
+
+                    onUpdate();
+                    Navigator.pop(ctx);
+                  },
+                  child: const Text("Aplicar"),
+                )
+              ],
+            );
+          }
+        );
+      }
+    );
+  }
+
+  // --- LÓGICA DE DESCONTO GERAL ---
+  void _showGeneralDiscountDialog() {
+    final valueController = TextEditingController();
+    
+    int selectedMode = _localQuote.generalDiscountType == 'percent' ? 1 : 0;
+    valueController.text = _localQuote.generalDiscount.toString();
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            String labelText = selectedMode == 1 ? 'Porcentagem (%)' : 'Valor Fixo (R\$)';
+
+            return AlertDialog(
+              title: const Text("Desconto Geral no Orçamento", style: TextStyle(fontSize: 16)),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text("Este desconto será aplicado sobre o valor total do orçamento."),
+                  const SizedBox(height: 16),
+                  
+                  ToggleButtons(
+                    borderRadius: BorderRadius.circular(8),
+                    isSelected: [selectedMode == 0, selectedMode == 1],
+                    onPressed: (index) {
+                      setStateDialog(() {
+                        selectedMode = index;
+                      });
+                    },
+                    children: const [
+                      Padding(padding: EdgeInsets.symmetric(horizontal: 16), child: Text("R\$ (Fixo)")),
+                      Padding(padding: EdgeInsets.symmetric(horizontal: 16), child: Text("% (Percentual)")),
+                    ],
+                  ),
+                  
+                  const SizedBox(height: 16),
+
+                  TextField(
+                    controller: valueController,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: InputDecoration(
+                      labelText: labelText,
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    setState(() {
+                      _localQuote = Quote(
+                        id: widget.quoteId, userId: _localQuote.userId, status: _localQuote.status, createdAt: _localQuote.createdAt, clientName: _localQuote.clientName, clientPhone: _localQuote.clientPhone, clientCity: _localQuote.clientCity, clientState: _localQuote.clientState,
+                        blanksList: _localQuote.blanksList, cabosList: _localQuote.cabosList, reelSeatsList: _localQuote.reelSeatsList, passadoresList: _localQuote.passadoresList, acessoriosList: _localQuote.acessoriosList,
+                        extraLaborCost: _localQuote.extraLaborCost, totalPrice: _localQuote.totalPrice, customizationText: _localQuote.customizationText, finishedImages: _localQuote.finishedImages,
+                        generalDiscount: 0.0,
+                        generalDiscountType: 'fixed'
+                      );
+                    });
+                    _recalculateTotal();
+                    Navigator.pop(ctx);
+                  }, 
+                  child: const Text("Remover", style: TextStyle(color: Colors.red))
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    double val = double.tryParse(valueController.text.replaceAll(',', '.')) ?? 0.0;
+                    if (val < 0) val = 0;
+                    if (selectedMode == 1 && val > 100) val = 100;
+
+                    setState(() {
+                      _localQuote = Quote(
+                        id: widget.quoteId, userId: _localQuote.userId, status: _localQuote.status, createdAt: _localQuote.createdAt, clientName: _localQuote.clientName, clientPhone: _localQuote.clientPhone, clientCity: _localQuote.clientCity, clientState: _localQuote.clientState,
+                        blanksList: _localQuote.blanksList, cabosList: _localQuote.cabosList, reelSeatsList: _localQuote.reelSeatsList, passadoresList: _localQuote.passadoresList, acessoriosList: _localQuote.acessoriosList,
+                        extraLaborCost: _localQuote.extraLaborCost, totalPrice: _localQuote.totalPrice, customizationText: _localQuote.customizationText, finishedImages: _localQuote.finishedImages,
+                        generalDiscount: val,
+                        generalDiscountType: selectedMode == 1 ? 'percent' : 'fixed'
+                      );
+                    });
+                    _recalculateTotal();
+                    Navigator.pop(ctx);
+                  },
+                  child: const Text("Aplicar"),
+                )
+              ],
+            );
+          }
+        );
+      }
+    );
+  }
+
+  // --- LÓGICA DE EDITAR CLIENTE ---
   void _showEditClientDialog() {
     final nameCtrl = TextEditingController(text: _localQuote.clientName);
     final phoneCtrl = TextEditingController(text: _localQuote.clientPhone);
@@ -413,56 +699,29 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              TextField(
-                controller: nameCtrl,
-                decoration: const InputDecoration(labelText: "Nome do Cliente", border: OutlineInputBorder()),
-              ),
+              TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: "Nome do Cliente", border: OutlineInputBorder())),
               const SizedBox(height: 12),
-              TextField(
-                controller: phoneCtrl,
-                keyboardType: TextInputType.phone,
-                inputFormatters: [phoneMask],
-                decoration: const InputDecoration(labelText: "Telefone", border: OutlineInputBorder()),
-              ),
+              TextField(controller: phoneCtrl, keyboardType: TextInputType.phone, inputFormatters: [phoneMask], decoration: const InputDecoration(labelText: "Telefone", border: OutlineInputBorder())),
               const SizedBox(height: 12),
               Row(
                 children: [
-                  Expanded(
-                    child: TextField(
-                      controller: cityCtrl,
-                      decoration: const InputDecoration(labelText: "Cidade", border: OutlineInputBorder()),
-                    ),
-                  ),
+                  Expanded(child: TextField(controller: cityCtrl, decoration: const InputDecoration(labelText: "Cidade", border: OutlineInputBorder()))),
                   const SizedBox(width: 8),
-                  SizedBox(
-                    width: 80,
-                    child: TextField(
-                      controller: stateCtrl,
-                      decoration: const InputDecoration(labelText: "UF", border: OutlineInputBorder()),
-                    ),
-                  ),
+                  SizedBox(width: 80, child: TextField(controller: stateCtrl, decoration: const InputDecoration(labelText: "UF", border: OutlineInputBorder()))),
                 ],
               ),
             ],
           ),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text("Cancelar"),
-          ),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancelar")),
           ElevatedButton(
             onPressed: () {
               if (nameCtrl.text.isEmpty) {
                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("O nome é obrigatório.")));
                 return;
               }
-              _updateClientData(
-                name: nameCtrl.text,
-                phone: phoneCtrl.text,
-                city: cityCtrl.text,
-                state: stateCtrl.text,
-              );
+              _updateClientData(name: nameCtrl.text, phone: phoneCtrl.text, city: cityCtrl.text, state: stateCtrl.text);
               Navigator.pop(ctx);
             },
             child: const Text("Atualizar"),
@@ -474,35 +733,29 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
 
   // --- UPLOAD IMAGEM ---
   Future<void> _uploadProductionImage() async {
+    final messenger = ScaffoldMessenger.of(context);
     final ImagePicker picker = ImagePicker();
     try {
       final XFile? image = await picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
       if (image != null) {
-        setState(() => _isUploadingImage = true);
-        
+        if (mounted) setState(() => _isUploadingImage = true);
         Uint8List bytes = await image.readAsBytes();
         String ext = image.name.split('.').last;
         String fileName = "production_${DateTime.now().millisecondsSinceEpoch}";
-
         final result = await _storageService.uploadImage(
-          fileBytes: bytes, 
+          fileBytes: bytes,
           fileName: fileName, 
-          fileExtension: ext,
-          //folder: 'quotes/${widget.quoteId}/finished',
+          fileExtension: ext, 
+          //folder: 'quotes/${widget.quoteId}/finished', 
           onProgress: (_) {}
         );
-
         if (result != null) {
-          setState(() {
-            _localQuote.finishedImages.add(result.downloadUrl);
-          });
+          if (mounted) setState(() { _localQuote.finishedImages.add(result.downloadUrl); });
           await _saveChanges(silent: true);
         }
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Erro ao enviar imagem: $e")));
-      }
+      if (mounted) messenger.showSnackBar(SnackBar(content: Text("Erro ao enviar imagem: $e")));
     } finally {
       if (mounted) setState(() => _isUploadingImage = false);
     }
@@ -515,8 +768,8 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
     await _saveChanges(silent: true);
   }
 
-  // --- STATUS ---
   Future<void> _changeStatus() async {
+    final messenger = ScaffoldMessenger.of(context);
     final String? newStatus = await showDialog<String>(
       context: context,
       builder: (BuildContext context) {
@@ -528,11 +781,7 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
               child: Container(
                 padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
                 margin: const EdgeInsets.symmetric(vertical: 4),
-                decoration: BoxDecoration(
-                  color: _statusColors[status]!.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: _statusColors[status]!),
-                ),
+                decoration: BoxDecoration(color: _statusColors[status]!.withOpacity(0.1), borderRadius: BorderRadius.circular(8), border: Border.all(color: _statusColors[status]!)),
                 child: Row(
                   children: [
                     Icon(Icons.circle, color: _statusColors[status], size: 14),
@@ -548,16 +797,25 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
     );
 
     if (newStatus != null && newStatus != _localQuote.status) {
-      setState(() {
-        _localQuote = Quote(
-          id: widget.quoteId, userId: _localQuote.userId, status: newStatus, createdAt: _localQuote.createdAt,
-          clientName: _localQuote.clientName, clientPhone: _localQuote.clientPhone, clientCity: _localQuote.clientCity, clientState: _localQuote.clientState,
-          blanksList: _localQuote.blanksList, cabosList: _localQuote.cabosList, reelSeatsList: _localQuote.reelSeatsList, passadoresList: _localQuote.passadoresList, acessoriosList: _localQuote.acessoriosList,
-          extraLaborCost: _localQuote.extraLaborCost, totalPrice: _localQuote.totalPrice, customizationText: _localQuote.customizationText, 
-          finishedImages: _localQuote.finishedImages,
-        );
-      });
-      await _saveChanges(silent: false, customMessage: "Status alterado para $newStatus");
+      if (mounted) setState(() => _isLoading = true);
+      try {
+        await _handleStockChange(_localQuote.status, newStatus);
+        if (mounted) {
+          setState(() {
+            _localQuote = Quote(
+              id: widget.quoteId, userId: _localQuote.userId, status: newStatus, createdAt: _localQuote.createdAt, clientName: _localQuote.clientName, clientPhone: _localQuote.clientPhone, clientCity: _localQuote.clientCity, clientState: _localQuote.clientState,
+              blanksList: _localQuote.blanksList, cabosList: _localQuote.cabosList, reelSeatsList: _localQuote.reelSeatsList, passadoresList: _localQuote.passadoresList, acessoriosList: _localQuote.acessoriosList,
+              extraLaborCost: _localQuote.extraLaborCost, totalPrice: _localQuote.totalPrice, customizationText: _localQuote.customizationText, finishedImages: _localQuote.finishedImages,
+              generalDiscount: _localQuote.generalDiscount, generalDiscountType: _localQuote.generalDiscountType
+            );
+          });
+        }
+        await _saveChanges(silent: false, customMessage: "Status alterado para $newStatus");
+      } catch (e) {
+        if(mounted) messenger.showSnackBar(SnackBar(content: Text("Erro ao alterar status: $e")));
+      } finally {
+        if(mounted) setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -571,6 +829,7 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
         clientState: state ?? _localQuote.clientState,
         blanksList: _localQuote.blanksList, cabosList: _localQuote.cabosList, reelSeatsList: _localQuote.reelSeatsList, passadoresList: _localQuote.passadoresList, acessoriosList: _localQuote.acessoriosList,
         extraLaborCost: _localQuote.extraLaborCost, totalPrice: _localQuote.totalPrice, customizationText: _localQuote.customizationText, finishedImages: _localQuote.finishedImages,
+        generalDiscount: _localQuote.generalDiscount, generalDiscountType: _localQuote.generalDiscountType
       );
     });
   }
@@ -597,6 +856,16 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
       total += _globalCustomizationPrice;
     }
 
+    double discountVal = 0.0;
+    if (_localQuote.generalDiscountType == 'percent') {
+      discountVal = total * (_localQuote.generalDiscount / 100);
+    } else {
+      discountVal = _localQuote.generalDiscount;
+    }
+    
+    total -= discountVal;
+    if (total < 0) total = 0;
+
     setState(() {
       _localQuote = Quote(
         id: widget.quoteId, userId: _localQuote.userId, status: _localQuote.status, createdAt: _localQuote.createdAt,
@@ -605,6 +874,8 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
         extraLaborCost: _localQuote.extraLaborCost, totalPrice: total, 
         customizationText: _customizationController.text, 
         finishedImages: _localQuote.finishedImages,
+        generalDiscount: _localQuote.generalDiscount,
+        generalDiscountType: _localQuote.generalDiscountType
       );
     });
   }
@@ -622,7 +893,24 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
     _recalculateTotal();
   }
 
+  Future<void> _generatePdf() async {
+    setState(() => _isLoading = true);
+    try {
+      // Salva antes de gerar para garantir dados atualizados
+      await _saveChanges(silent: true);
+      
+      // Gera o PDF
+      await PdfService.generateAndPrintQuote(_localQuote);
+      
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Erro ao gerar PDF: $e")));
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
   Future<void> _saveChanges({bool silent = false, String? customMessage}) async {
+    final messenger = ScaffoldMessenger.of(context);
     if (!silent) setState(() => _isLoading = true);
     
     _localQuote = Quote(
@@ -630,57 +918,46 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
       clientName: _localQuote.clientName, clientPhone: _localQuote.clientPhone, clientCity: _localQuote.clientCity, clientState: _localQuote.clientState,
       blanksList: _localQuote.blanksList, cabosList: _localQuote.cabosList, reelSeatsList: _localQuote.reelSeatsList, passadoresList: _localQuote.passadoresList, acessoriosList: _localQuote.acessoriosList,
       extraLaborCost: _localQuote.extraLaborCost, totalPrice: _localQuote.totalPrice, 
-      customizationText: _customizationController.text, // Garante que salva o que está no campo
+      customizationText: _customizationController.text,
       finishedImages: _localQuote.finishedImages,
+      generalDiscount: _localQuote.generalDiscount,
+      generalDiscountType: _localQuote.generalDiscountType
     );
 
     try {
-      await FirebaseFirestore.instance
-          .collection(AppConstants.colQuotes) 
-          .doc(widget.quoteId)
-          .update(_localQuote.toMap());
-
-      if (mounted && !silent) {
-        ScaffoldMessenger.of(context).showSnackBar(
-           SnackBar(content: Text(customMessage ?? 'Orçamento salvo com sucesso!'), backgroundColor: Colors.green),
-        );
-      }
+      await FirebaseFirestore.instance.collection(AppConstants.colQuotes).doc(widget.quoteId).update(_localQuote.toMap());
+      if (!mounted) return;
+      if (!silent) messenger.showSnackBar(SnackBar(content: Text(customMessage ?? 'Orçamento salvo com sucesso!'), backgroundColor: Colors.green));
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao salvar: $e'), backgroundColor: Colors.red));
-      }
+      if (mounted) messenger.showSnackBar(SnackBar(content: Text('Erro ao salvar: $e'), backgroundColor: Colors.red));
     } finally {
       if (mounted && !silent) setState(() => _isLoading = false);
     }
   }
 
   Future<void> _shareOnWhatsApp() async {
+    final messenger = ScaffoldMessenger.of(context);
     try {
       await WhatsAppService.sendQuoteToClient(_localQuote);
     } catch (e) {
-      if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Erro WhatsApp: $e")));
+      if(mounted) messenger.showSnackBar(SnackBar(content: Text("Erro WhatsApp: $e")));
     }
   }
 
   void _showComponentSelector(String title, String category, Function(Map<String, dynamic>) onSelected) {
     showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => ComponentSelectorModal(
-        title: title, 
-        category: category, 
-        onSelected: onSelected
-      ),
+      context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
+      builder: (ctx) => ComponentSelectorModal(title: title, category: category, onSelected: onSelected),
     );
   }
 
   void _addNewItem(String sectionTitle, List<Map<String, dynamic>> list) {
     final category = _sectionCategoryMap[sectionTitle];
     if (category == null) return;
-
     _showComponentSelector(sectionTitle, category, (newItem) {
         setState(() {
+          newItem['originalPrice'] = newItem['price'];
+          newItem['discountInfo'] = null;
           list.add(newItem);
         });
         _recalculateTotal();
@@ -693,12 +970,7 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
     return Container(
       margin: const EdgeInsets.only(top: 24),
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade300),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 2))],
-      ),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey.shade300), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 2))]),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -706,60 +978,27 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               const Text("FOTOS DA PRODUÇÃO / ENTREGA", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Colors.blueGrey)),
-              if (_isUploadingImage)
-                const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-              else
-                IconButton(
-                  icon: const Icon(Icons.add_a_photo, color: Colors.blue),
-                  onPressed: _uploadProductionImage,
-                  tooltip: "Adicionar Foto",
-                )
+              if (_isUploadingImage) const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+              else IconButton(icon: const Icon(Icons.add_a_photo, color: Colors.blue), onPressed: _uploadProductionImage, tooltip: "Adicionar Foto")
             ],
           ),
           const Divider(),
           if (_localQuote.finishedImages.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(16.0),
-              child: Center(child: Text("Nenhuma foto registrada.", style: TextStyle(color: Colors.grey))),
-            )
+            const Padding(padding: EdgeInsets.all(16.0), child: Center(child: Text("Nenhuma foto registrada.", style: TextStyle(color: Colors.grey))))
           else
             GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: _localQuote.finishedImages.length,
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 3, 
-                crossAxisSpacing: 8, 
-                mainAxisSpacing: 8
-              ),
+              shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), itemCount: _localQuote.finishedImages.length,
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, crossAxisSpacing: 8, mainAxisSpacing: 8),
               itemBuilder: (context, index) {
                 final imgUrl = _localQuote.finishedImages[index];
                 return Stack(
                   fit: StackFit.expand,
                   children: [
                     GestureDetector(
-                      onTap: () {
-                        showDialog(context: context, builder: (_) => Dialog(
-                          backgroundColor: Colors.transparent,
-                          child: InteractiveViewer(child: Image.network(imgUrl)),
-                        ));
-                      },
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.network(imgUrl, fit: BoxFit.cover),
-                      ),
+                      onTap: () { showDialog(context: context, builder: (_) => Dialog(backgroundColor: Colors.transparent, child: InteractiveViewer(child: Image.network(imgUrl)))); },
+                      child: ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(imgUrl, fit: BoxFit.cover)),
                     ),
-                    Positioned(
-                      top: 4, right: 4,
-                      child: GestureDetector(
-                        onTap: () => _deleteProductionImage(index),
-                        child: Container(
-                          padding: const EdgeInsets.all(4),
-                          decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
-                          child: const Icon(Icons.delete, color: Colors.white, size: 14),
-                        ),
-                      ),
-                    )
+                    Positioned(top: 4, right: 4, child: GestureDetector(onTap: () => _deleteProductionImage(index), child: Container(padding: const EdgeInsets.all(4), decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle), child: const Icon(Icons.delete, color: Colors.white, size: 14))))
                   ],
                 );
               },
@@ -787,14 +1026,61 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
     totalCost += sumCost(_localQuote.acessoriosList);
 
     double labor = _localQuote.extraLaborCost;
-    double totalSale = _localQuote.totalPrice;
+    double totalSale = _localQuote.totalPrice; 
     
     double profit = totalSale - totalCost; 
     double margin = totalSale > 0 ? (profit / totalSale) * 100 : 0.0;
 
-    double customCost = (_customizationController.text.isNotEmpty) 
-        ? _globalCustomizationPrice 
-        : 0.0;
+    double customCost = (_customizationController.text.isNotEmpty) ? _globalCustomizationPrice : 0.0;
+
+    double totalOriginal = 0.0;
+    List<Widget> discountWidgets = [];
+
+    void processOriginalList(List<Map<String, dynamic>> list) {
+      for (var item in list) {
+        final qty = (item['quantity'] ?? 1) as int;
+        final price = (item['price'] ?? 0.0) as double;
+        final originalPrice = (item['originalPrice'] ?? price).toDouble();
+        totalOriginal += (originalPrice * qty);
+
+        if (item['discountInfo'] != null) {
+          double discountVal = item['discountInfo']['value'].toDouble();
+          String type = item['discountInfo']['type'];
+          String label = type == 'percent' ? "${discountVal.toStringAsFixed(0)}%" : _currencyFormat.format(discountVal);
+          discountWidgets.add(
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(child: Text("${item['name']} ($label)", style: TextStyle(color: Colors.orange[200], fontSize: 12))),
+                  Text("-${_currencyFormat.format((originalPrice - price) * qty)}", style: TextStyle(color: Colors.orange[200], fontSize: 12)),
+                ],
+              ),
+            )
+          );
+        }
+      }
+    }
+
+    processOriginalList(_localQuote.blanksList);
+    processOriginalList(_localQuote.cabosList);
+    processOriginalList(_localQuote.reelSeatsList);
+    processOriginalList(_localQuote.passadoresList);
+    processOriginalList(_localQuote.acessoriosList);
+    
+    totalOriginal += labor;
+    totalOriginal += customCost;
+
+    double generalDiscountVal = 0.0;
+    if (_localQuote.generalDiscount > 0) {
+      if (_localQuote.generalDiscountType == 'percent') {
+        double subtotal = totalSale / (1 - (_localQuote.generalDiscount / 100));
+        generalDiscountVal = subtotal - totalSale;
+      } else {
+        generalDiscountVal = _localQuote.generalDiscount;
+      }
+    }
 
     return Container(
       margin: const EdgeInsets.only(top: 24),
@@ -807,18 +1093,7 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-               const Icon(Icons.analytics_outlined, color: Colors.white70, size: 20),
-               const SizedBox(width: 8),
-               const Text("RESUMO FINANCEIRO FINAL", style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
-               if (_isFetchingCosts) ...[
-                 const SizedBox(width: 12),
-                 const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white70))
-               ]
-            ],
-          ),
+          const Text("RESUMO FINANCEIRO", style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold, letterSpacing: 1.2), textAlign: TextAlign.center),
           const Divider(color: Colors.white24, height: 32),
           
           Row(
@@ -846,13 +1121,41 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
               ],
             ),
           ],
+          
+          const Divider(color: Colors.white12, height: 24),
+
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text("Total Tabela (Bruto):", style: TextStyle(color: Colors.white70)),
+              Text(_currencyFormat.format(totalOriginal), style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.bold)),
+            ],
+          ),
+          
+          if (discountWidgets.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            const Text("Descontos em Itens:", style: TextStyle(color: Colors.orangeAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+            ...discountWidgets,
+          ],
+
+          if (generalDiscountVal > 0) ...[
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text("Desconto Geral:", style: TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold)),
+                Text("-${_currencyFormat.format(generalDiscountVal)}", style: const TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold)),
+              ],
+            ),
+          ],
+
           const Divider(color: Colors.white12, height: 24),
           
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text("FATURAMENTO TOTAL:", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-              Text(_currencyFormat.format(totalSale), style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold, fontSize: 18)),
+              const Text("FATURAMENTO FINAL:", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+              Text(_currencyFormat.format(totalSale), style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold, fontSize: 22)),
             ],
           ),
           const SizedBox(height: 12),
@@ -928,9 +1231,12 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
                   final qty = (item['quantity'] ?? 1) as int;
                   final price = (item['price'] ?? 0.0) as double;
                   final cost = (item['costPrice'] ?? item['cost'] ?? 0.0) as double;
+                  final originalPrice = (item['originalPrice'] ?? price).toDouble();
+                  final hasDiscount = item['discountInfo'] != null;
                   
                   final totalItemSale = price * qty;
                   final totalItemCost = cost * qty;
+                  
                   final itemProfit = totalItemSale - totalItemCost;
                   final itemMargin = totalItemSale > 0 ? (itemProfit / totalItemSale) * 100 : 0.0;
 
@@ -960,9 +1266,11 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
                               Text(item['name'] ?? 'Item', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.black87)),
                               if (item['variation'] != null)
                                 Text("${item['variation']}", style: TextStyle(color: Colors.grey[600], fontSize: 13)),
-                              const SizedBox(height: 8),
+                              const SizedBox(height: 4),
+                              
                               Container(
                                 padding: const EdgeInsets.all(8),
+                                margin: const EdgeInsets.only(bottom: 6),
                                 decoration: BoxDecoration(color: Colors.grey[50], borderRadius: BorderRadius.circular(6)),
                                 child: Column(
                                   children: [
@@ -978,6 +1286,25 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
                                     )
                                   ],
                                 ),
+                              ),
+
+                              InkWell(
+                                onTap: () => _showDiscountDialog(item, () {
+                                  setState(() {});
+                                  _recalculateTotal();
+                                }),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: hasDiscount ? Colors.red[50] : Colors.grey[100],
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(color: hasDiscount ? Colors.red : Colors.grey)
+                                  ),
+                                  child: Text(
+                                    hasDiscount ? "Desconto Aplicado" : "Adicionar Desconto",
+                                    style: TextStyle(fontSize: 10, color: hasDiscount ? Colors.red : Colors.grey[800], fontWeight: FontWeight.bold)
+                                  ),
+                                ),
                               )
                             ],
                           ),
@@ -986,8 +1313,12 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
+                            if (hasDiscount)
+                              Text(_currencyFormat.format(originalPrice * qty), style: const TextStyle(decoration: TextDecoration.lineThrough, color: Colors.grey, fontSize: 12)),
+                            
                             Text(_currencyFormat.format(totalItemSale), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: Colors.black)),
                             Text("Custo: ${_currencyFormat.format(totalItemCost)}", style: TextStyle(fontSize: 10, color: Colors.red[300])),
+                            
                             const SizedBox(height: 8),
                             Container(
                               height: 32,
@@ -1037,6 +1368,10 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
     );
   }
 
+ // --- WIDGETS DE CAMPOS DE ENTRADA ---
+  // (Mantidos no build principal: Mão de Obra e Customização)
+  // ...
+  
   @override
   Widget build(BuildContext context) {
     Color statusColor = _statusColors[_localQuote.status] ?? Colors.grey;
@@ -1054,6 +1389,11 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
             icon: const Icon(Icons.copy, color: Colors.blueGrey),
             onPressed: _showDuplicateDialog,
             tooltip: 'Copiar para novo Cliente',
+          ),
+          IconButton(
+            icon: const Icon(Icons.picture_as_pdf, color: Colors.redAccent),
+            onPressed: _generatePdf,
+            tooltip: 'Gerar PDF',
           ),
           IconButton(
             icon: const Icon(Icons.share, color: Colors.green),
@@ -1075,11 +1415,7 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 2))]
-                    ),
+                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 2))]),
                     padding: const EdgeInsets.all(20),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1161,6 +1497,7 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
                                       extraLaborCost: double.tryParse(val.replaceAll(',', '.')) ?? 0.0,
                                       totalPrice: _localQuote.totalPrice, customizationText: _localQuote.customizationText, 
                                       finishedImages: _localQuote.finishedImages,
+                                      generalDiscount: _localQuote.generalDiscount, generalDiscountType: _localQuote.generalDiscountType
                                     );
                                   });
                                   _recalculateTotal();
@@ -1169,11 +1506,28 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
                             )
                           ],
                         ),
+                        // ROW DO DESCONTO GERAL (NOVO)
+                        const SizedBox(height: 12),
+                        InkWell(
+                          onTap: _showGeneralDiscountDialog,
+                          child: Row(
+                            children: [
+                              Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.red[50], borderRadius: BorderRadius.circular(8)), child: const Icon(Icons.discount, color: Colors.red)),
+                              const SizedBox(width: 16),
+                              const Expanded(child: Text("Desconto Geral", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15))),
+                              Text(
+                                _localQuote.generalDiscount > 0 
+                                  ? "- ${_localQuote.generalDiscountType == 'percent' ? '${_localQuote.generalDiscount}%' : _currencyFormat.format(_localQuote.generalDiscount)}"
+                                  : "Adicionar",
+                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: _localQuote.generalDiscount > 0 ? Colors.red : Colors.grey),
+                              )
+                            ],
+                          ),
+                        ),
                         const Divider(height: 30),
                         TextField(
                           controller: _customizationController,
-                          maxLines: 3,
-                          // CORREÇÃO: COR DO TEXTO DEFINIDA COMO PRETO
+                          maxLines: 5,
                           style: const TextStyle(color: Colors.black87, fontSize: 15),
                           onChanged: (val) {
                              _recalculateTotal();
@@ -1238,7 +1592,7 @@ class _ComponentSelectorModalState extends State<ComponentSelectorModal> {
                 child: Row(
                   children: [
                     IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
-                    Expanded(child: Text("Adicionar ${widget.title}", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold), textAlign: TextAlign.center)),
+                    Expanded(child: Text("Adicionar ${widget.title}", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87), textAlign: TextAlign.center)),
                     const SizedBox(width: 48), 
                   ],
                 ),
@@ -1322,11 +1676,11 @@ class _ComponentSelectorModalState extends State<ComponentSelectorModal> {
                             child: (data['imageUrl'] == null || data['imageUrl'].toString().isEmpty) 
                                 ? const Icon(Icons.image_not_supported, color: Colors.grey) : null,
                           ),
-                          title: Text(data['name'] ?? 'Sem nome', style: const TextStyle(fontWeight: FontWeight.w600)),
-                          subtitle: Text("R\$ ${_currencyFormat.format(basePrice).replaceAll('R\$', '')}  •  Est: ${data['stock'] ?? 0}"),
+                          title: Text(data['name'] ?? 'Sem nome', style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.black87)),
+                          subtitle: Text("R\$ ${_currencyFormat.format(basePrice).replaceAll('R\$', '')}  •  Est: ${data['stock'] ?? 0}", style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.black45)),
                           children: [
                             ListTile(
-                              title: const Text("Selecionar Padrão"),
+                              title: const Text("Selecionar Padrão", style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.black87)),
                               trailing: const Icon(Icons.add_circle_outline, color: Colors.blue),
                               onTap: () {
                                 widget.onSelected({
@@ -1368,8 +1722,8 @@ class _ComponentSelectorModalState extends State<ComponentSelectorModal> {
                                         )
                                       )
                                     : const Icon(Icons.subdirectory_arrow_right, size: 16),
-                                  title: Text(vName),
-                                  trailing: Text(_currencyFormat.format(vPrice)),
+                                  title: Text(vName, style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.black87)),
+                                  trailing: Text(_currencyFormat.format(vPrice), style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.black45)),
                                   onTap: () {
                                     widget.onSelected({
                                       'id': filteredDocs[index].id,

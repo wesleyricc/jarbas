@@ -4,6 +4,7 @@ import 'package:provider/provider.dart'; // Import o Provider
 import 'firebase_options.dart';
 import 'providers/rod_builder_provider.dart'; // Import o seu Provider
 import 'screens/auth_gate.dart'; // Import o AuthGate
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -28,6 +29,15 @@ class CustomRodsApp extends StatelessWidget {
     return MaterialApp(
       title: 'Jarbas Custom Rods',
       debugShowCheckedModeBanner: false,
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: const [
+        Locale('pt', 'BR'), // Define Português do Brasil
+      ],
+
       themeMode: ThemeMode.dark, // Forçar modo escuro
       darkTheme: ThemeData(
         brightness: Brightness.dark,

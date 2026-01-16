@@ -1,15 +1,30 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart'; // Necessário para kIsWeb
 import 'package:url_launcher/url_launcher.dart';
 import '../providers/rod_builder_provider.dart';
 import '../models/quote_model.dart'; 
 
 class WhatsAppService {
-  // Número do Admin (lojista) - Substitua pelo seu número real
-  static const String _adminPhoneNumber = "5511999999999"; 
+  
+  // --- Helper: Busca o Telefone do Fornecedor ---
+  static Future<String> _getAdminPhoneNumber() async {
+    try {
+      final doc = await FirebaseFirestore.instance.collection('settings').doc('global_config').get();
+      if (doc.exists && doc.data() != null) {
+        final data = doc.data()!;
+        if (data['supplierPhone'] != null && data['supplierPhone'].toString().isNotEmpty) {
+          return data['supplierPhone'].toString();
+        }
+      }
+    } catch (e) {
+      print("Erro ao buscar telefone: $e");
+    }
+    return "5511999999999"; 
+  }
 
-  // --- Método 1: Enviar Orçamento Completo (Cliente -> Admin) ---
+  // --- Método 1: Novo Orçamento ---
   static Future<void> sendNewQuoteRequest({required RodBuilderProvider provider}) async {
     final buffer = StringBuffer();
-    
     buffer.writeln("*NOVO ORÇAMENTO - APP*");
     buffer.writeln("-------------------------");
     buffer.writeln("*Cliente:* ${provider.clientName}");
@@ -45,14 +60,15 @@ class WhatsAppService {
     }
 
     buffer.writeln("-------------------------");
-    buffer.writeln("*VALOR TOTAL: R\$ ${provider.totalPrice.toStringAsFixed(2)}*");
-    buffer.writeln("-------------------------");
-    buffer.writeln("Aguardo retorno para confirmação!");
+    //buffer.writeln("*VALOR TOTAL: R\$ ${provider.totalPrice.toStringAsFixed(2)}*");
+    //buffer.writeln("-------------------------");
+    buffer.writeln("Aguardo retorno do orçamento!");
 
-    await _launchWhatsApp(buffer.toString());
+    String adminPhone = await _getAdminPhoneNumber();
+    await _launchWhatsApp(buffer.toString(), targetPhone: adminPhone);
   }
 
-  // --- Método 2: Contato Direto (Home Screen) ---
+  // --- Método 2: Contato Direto ---
   static Future<void> sendDirectContactRequest({
     required String clientName,
     required String clientPhone,
@@ -68,25 +84,24 @@ class WhatsAppService {
     buffer.writeln("-------------------------");
     buffer.writeln("Olá! Gostaria de tirar algumas dúvidas sobre as varas customizadas.");
     
-    await _launchWhatsApp(buffer.toString());
+    String adminPhone = await _getAdminPhoneNumber();
+    await _launchWhatsApp(buffer.toString(), targetPhone: adminPhone);
   }
 
-  // --- Método 3: Admin Envia Orçamento (Admin -> Cliente) ---
+  // --- Método 3: Admin Envia para Cliente ---
   static Future<void> sendQuoteToClient(Quote quote) async {
     final buffer = StringBuffer();
-    
     buffer.writeln("*Olá ${quote.clientName}, aqui está o resumo do seu orçamento:*");
     buffer.writeln("-------------------------");
     
-    // Helper para ler listas do Mapa (Quote Model)
     void writeMapList(String title, List<Map<String, dynamic>> items) {
       if (items.isNotEmpty) {
         buffer.writeln("*$title:*");
         for (var item in items) {
           String name = item['name'] ?? 'Item';
           int qty = item['quantity'] ?? 1;
-          String variation = item['variation'] ?? '';
-          String varText = variation.isNotEmpty ? " [$variation]" : "";
+          String variation = item['variation']?.toString() ?? '';
+          String varText = (variation.isNotEmpty && !name.contains(variation)) ? " [$variation]" : "";
           
           buffer.writeln(" - ${qty}x $name$varText");
         }
@@ -100,7 +115,6 @@ class WhatsAppService {
     writeMapList("Passadores", quote.passadoresList);
     writeMapList("Acessórios", quote.acessoriosList);
 
-    // CORREÇÃO AQUI: Verificação de nulo antes de acessar isNotEmpty
     if (quote.customizationText != null && quote.customizationText!.isNotEmpty) {
       buffer.writeln("*Notas:* ${quote.customizationText}");
       buffer.writeln("");
@@ -111,29 +125,46 @@ class WhatsAppService {
     buffer.writeln("-------------------------");
     buffer.writeln("Podemos aprovar?");
 
-    // Envia para o telefone do CLIENTE
     await _launchWhatsApp(buffer.toString(), targetPhone: quote.clientPhone);
   }
 
-  // --- Helper Privado ---
-  static Future<void> _launchWhatsApp(String message, {String? targetPhone}) async {
-    // Se targetPhone for nulo, usa o do Admin.
-    String phone = targetPhone ?? _adminPhoneNumber;
-    
-    // Limpeza do número (mantém apenas dígitos)
-    phone = phone.replaceAll(RegExp(r'[^\d]+'), '');
-
-    // Se o número não começar com 55 e tiver tamanho de celular BR (10 ou 11 dígitos), adiciona 55
+  // --- Helper Privado (UNIVERSAL: IOS, ANDROID E WEB) ---
+  static Future<void> _launchWhatsApp(String message, {required String targetPhone}) async {
+    String phone = targetPhone.replaceAll(RegExp(r'[^\d]+'), '');
     if (phone.length >= 10 && !phone.startsWith('55')) {
       phone = '55$phone';
     }
 
-    final url = Uri.parse("https://wa.me/$phone?text=${Uri.encodeComponent(message)}");
+    final Uri appUrl = Uri.parse("whatsapp://send?phone=$phone&text=${Uri.encodeComponent(message)}");
+    final Uri webUrl = Uri.parse("https://wa.me/$phone?text=${Uri.encodeComponent(message)}");
 
-    if (await canLaunchUrl(url)) {
-      await launchUrl(url, mode: LaunchMode.externalApplication);
-    } else {
-      throw 'Não foi possível abrir o WhatsApp.';
+    // LÓGICA ESPECÍFICA PARA WEB (PWA)
+    if (kIsWeb) {
+      // Na Web, sempre usamos a URL https://wa.me.
+      // O navegador (Chrome/Safari) cuidará de abrir o app se estiver instalado.
+      if (await canLaunchUrl(webUrl)) {
+        await launchUrl(webUrl, mode: LaunchMode.externalApplication);
+      } else {
+        throw 'Não foi possível abrir o WhatsApp Web.';
+      }
+      return;
+    }
+
+    // LÓGICA PARA NATIVO (ANDROID / IOS)
+    try {
+      // 1. Tenta abrir o App Nativo
+      if (await canLaunchUrl(appUrl)) {
+        await launchUrl(appUrl, mode: LaunchMode.externalApplication);
+      } 
+      // 2. Fallback para Web Link (caso não tenha app instalado ou restrição do iOS)
+      else if (await canLaunchUrl(webUrl)) {
+        await launchUrl(webUrl, mode: LaunchMode.externalApplication);
+      } else {
+        throw 'Não foi possível abrir o WhatsApp.';
+      }
+    } catch (e) {
+      // Última tentativa forçada
+      await launchUrl(webUrl, mode: LaunchMode.externalApplication);
     }
   }
 }
