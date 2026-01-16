@@ -308,7 +308,6 @@ class _AdminQuotesScreenState extends State<AdminQuotesScreen> {
                   }
 
                   final docs = snapshot.data!.docs.where((doc) {
-                    final data = doc.data() as Map<String, dynamic>;
                     final quote = Quote.fromFirestore(doc);
                     
                     if (_statusFilter != 'todos' && quote.status != _statusFilter) {
@@ -344,8 +343,6 @@ class _AdminQuotesScreenState extends State<AdminQuotesScreen> {
                       if (quote.status == AppConstants.statusProducao) statusColor = Colors.purple;
                       if (quote.status == AppConstants.statusConcluido) statusColor = Colors.green;
                       if (quote.status == AppConstants.statusCancelado) statusColor = Colors.red;
-
-                      String summary = _buildQuoteSummary(quote).toString(); 
 
                       return Card(
                         elevation: 2,
