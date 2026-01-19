@@ -3,13 +3,15 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
-import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
 import '../models/quote_model.dart';
+import '../models/customer_model.dart'; 
+import '../services/customer_service.dart'; 
 import '../services/storage_service.dart';
 import '../services/whatsapp_service.dart';
 import '../services/quote_service.dart';
 import '../utils/app_constants.dart';
 import '../services/pdf_service.dart';
+import 'admin_customers_screen.dart'; // Import necessário para o CustomerFormDialog
 
 class AdminQuoteDetailScreen extends StatefulWidget {
   final Quote quote;
@@ -37,6 +39,7 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
   final NumberFormat _currencyFormat = NumberFormat.simpleCurrency(locale: 'pt_BR');
   final StorageService _storageService = StorageService();
   final QuoteService _quoteService = QuoteService();
+  final CustomerService _customerService = CustomerService();
 
   final Map<String, String> _sectionCategoryMap = {
     'Blanks': AppConstants.catBlank,
@@ -46,10 +49,9 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
     'Acessórios': AppConstants.catAcessorios,
   };
 
-  // ADICIONADO O STATUS 'ENVIADO' AQUI
   final Map<String, Color> _statusColors = {
     AppConstants.statusPendente: Colors.orange,
-    AppConstants.statusEnviado: Colors.cyan, // Novo Status
+    AppConstants.statusEnviado: Colors.cyan,
     AppConstants.statusAprovado: Colors.blue,
     AppConstants.statusProducao: Colors.purple,
     AppConstants.statusConcluido: Colors.green,
@@ -257,16 +259,8 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
 
   // --- LÓGICA DE DUPLICAR ORÇAMENTO ---
   void _showDuplicateDialog() {
-    final nameCtrl = TextEditingController();
-    final phoneCtrl = TextEditingController();
-    final cityCtrl = TextEditingController();
-    final stateCtrl = TextEditingController();
+    CustomerModel? selectedCustomer;
     bool updatePrices = false;
-    var phoneMask = MaskTextInputFormatter(
-      mask: '(##) #####-####', 
-      filter: { "#": RegExp(r'[0-9]') },
-      type: MaskAutoCompletionType.lazy
-    );
     
     showDialog(
       context: context,
@@ -275,27 +269,50 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
           builder: (context, setStateDialog) {
             return AlertDialog(
               title: const Text("Copiar Orçamento"),
-              content: SingleChildScrollView(
+              content: SizedBox(
+                width: double.maxFinite,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text("Informe os dados do novo cliente para criar uma cópia deste orçamento."),
+                    const Text("Selecione o cliente para o novo orçamento:"),
                     const SizedBox(height: 16),
-                    TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: "Nome do Cliente", border: OutlineInputBorder())),
-                    const SizedBox(height: 8),
-                    TextField(controller: phoneCtrl, keyboardType: TextInputType.phone, inputFormatters: [phoneMask], decoration: const InputDecoration(labelText: "Telefone", border: OutlineInputBorder())),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Expanded(child: TextField(controller: cityCtrl, decoration: const InputDecoration(labelText: "Cidade", border: OutlineInputBorder()))),
-                        const SizedBox(width: 8),
-                        SizedBox(width: 80, child: TextField(controller: stateCtrl, decoration: const InputDecoration(labelText: "UF", border: OutlineInputBorder()))),
-                      ],
-                    ),
+                    
+                    // Seletor de Cliente
+                    if (selectedCustomer == null)
+                       ElevatedButton.icon(
+                        icon: const Icon(Icons.person_search),
+                        label: const Text("Selecionar Cliente"),
+                        style: ElevatedButton.styleFrom(
+                          minimumSize: const Size(double.infinity, 45),
+                          backgroundColor: Colors.blueGrey,
+                          foregroundColor: Colors.white
+                        ),
+                        onPressed: () async {
+                          // Abre o seletor e espera o retorno
+                          final result = await _pickCustomer(context);
+                          if (result != null) {
+                            setStateDialog(() => selectedCustomer = result);
+                          }
+                        },
+                       )
+                    else 
+                       ListTile(
+                         contentPadding: EdgeInsets.zero,
+                         leading: const CircleAvatar(child: Icon(Icons.person)),
+                         title: Text(selectedCustomer!.name),
+                         subtitle: Text(selectedCustomer!.phone),
+                         trailing: IconButton(
+                           icon: const Icon(Icons.close, color: Colors.red),
+                           onPressed: () => setStateDialog(() => selectedCustomer = null),
+                         ),
+                       ),
+
                     const SizedBox(height: 16),
+                    const Divider(),
                     CheckboxListTile(
                       title: const Text("Atualizar preços para o valor atual?", style: TextStyle(fontSize: 14)),
-                      subtitle: const Text("Se marcado, busca os preços atuais do catálogo. Se desmarcado, mantém os preços originais.", style: TextStyle(fontSize: 11)),
+                      subtitle: const Text("Se marcado, busca os preços atuais do catálogo.", style: TextStyle(fontSize: 11)),
                       value: updatePrices,
                       onChanged: (val) {
                         setStateDialog(() {
@@ -313,13 +330,9 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
                 ElevatedButton.icon(
                   icon: const Icon(Icons.copy),
                   label: const Text("Criar Cópia"),
-                  onPressed: () async {
-                    if (nameCtrl.text.isEmpty) {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Informe o nome do cliente.")));
-                      return;
-                    }
+                  onPressed: selectedCustomer == null ? null : () async {
                     Navigator.pop(ctx);
-                    await _duplicateQuote(nameCtrl.text, phoneCtrl.text, cityCtrl.text, stateCtrl.text, updatePrices);
+                    await _duplicateQuote(selectedCustomer!, updatePrices);
                   },
                 )
               ],
@@ -330,7 +343,110 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
     );
   }
 
-  Future<void> _duplicateQuote(String name, String phone, String city, String state, bool updatePrices) async {
+  // --- SELETOR DE CLIENTES (COM BOTÃO DE ADICIONAR NOVO) ---
+  Future<CustomerModel?> _pickCustomer(BuildContext context) async {
+    CustomerModel? picked;
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        // Título com botão de adicionar
+        title: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text("Buscar Cliente"),
+            IconButton(
+              icon: const Icon(Icons.person_add, color: Colors.blue),
+              tooltip: "Cadastrar Novo",
+              onPressed: () async {
+                 // Abre o formulário de cadastro
+                 await showDialog(
+                   context: ctx,
+                   builder: (c) => CustomerFormDialog(
+                     onSave: (newCust) async {
+                        await _customerService.saveCustomer(newCust);
+                        // Fecha o form
+                        Navigator.pop(c);
+                        // Feedback
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text("Cliente cadastrado! Busque pelo nome na lista."))
+                        );
+                     }
+                   )
+                 );
+              },
+            )
+          ],
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+               StreamBuilder<List<CustomerModel>>(
+                stream: _customerService.getCustomers(),
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData) return const CircularProgressIndicator();
+                  final customers = snapshot.data!;
+                  
+                  return Autocomplete<CustomerModel>(
+                    displayStringForOption: (option) => option.name,
+                    optionsBuilder: (textEditingValue) {
+                      if (textEditingValue.text == '') return const Iterable<CustomerModel>.empty();
+                      return customers.where((option) => option.name.toLowerCase().contains(textEditingValue.text.toLowerCase()));
+                    },
+                    onSelected: (selection) {
+                      picked = selection;
+                      Navigator.pop(ctx);
+                    },
+                    fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+                       return TextField(
+                        controller: controller,
+                        focusNode: focusNode,
+                        autofocus: true,
+                        decoration: InputDecoration(
+                          hintText: 'Digite o nome...',
+                          prefixIcon: const Icon(Icons.search),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10))
+                        ),
+                       );
+                    },
+                    optionsViewBuilder: (context, onSelected, options) {
+                      return Align(
+                        alignment: Alignment.topLeft,
+                        child: Material(
+                          elevation: 4,
+                          child: Container(
+                            width: 300,
+                            constraints: const BoxConstraints(maxHeight: 200),
+                            color: Colors.white,
+                            child: ListView.builder(
+                              padding: EdgeInsets.zero,
+                              itemCount: options.length,
+                              itemBuilder: (ctx, index) {
+                                final opt = options.elementAt(index);
+                                return ListTile(
+                                  title: Text(opt.name),
+                                  subtitle: Text(opt.phone),
+                                  onTap: () => onSelected(opt),
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                },
+               )
+            ],
+          ),
+        ),
+      )
+    );
+    return picked;
+  }
+
+  Future<void> _duplicateQuote(CustomerModel customer, bool updatePrices) async {
     final messenger = ScaffoldMessenger.of(context);
     
     if (mounted) setState(() => _isLoading = true);
@@ -358,7 +474,6 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
           + _localQuote.extraLaborCost 
           + customizationCost;
       
-      // Aplica desconto geral
       double discountVal = 0.0;
       if (_localQuote.generalDiscountType == 'percent') {
         discountVal = newTotal * (_localQuote.generalDiscount / 100);
@@ -371,10 +486,11 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
         userId: _localQuote.userId,
         status: AppConstants.statusRascunho,
         createdAt: Timestamp.now(),
-        clientName: name,
-        clientPhone: phone,
-        clientCity: city,
-        clientState: state,
+        customerId: customer.id, // VINCULA AO NOVO CLIENTE
+        clientName: customer.name,
+        clientPhone: customer.phone,
+        clientCity: customer.city,
+        clientState: customer.state,
         blanksList: newBlanks,
         cabosList: newCabos,
         reelSeatsList: newReelSeats,
@@ -394,7 +510,6 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
         messenger.showSnackBar(
           const SnackBar(content: Text("Orçamento copiado com sucesso!"), backgroundColor: Colors.green)
         );
-        Navigator.pop(context);
       }
     } catch (e) {
       if (mounted) {
@@ -463,7 +578,7 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
     return total;
   }
 
-  // --- LÓGICA DE DESCONTO NO ITEM (3 OPÇÕES) ---
+  // --- LÓGICA DE DESCONTO NO ITEM ---
   void _showDiscountDialog(Map<String, dynamic> item, Function() onUpdate) {
     double originalPrice = (item['originalPrice'] ?? item['price'] ?? 0.0).toDouble();
     if (originalPrice == 0) originalPrice = (item['price'] ?? 0.0).toDouble();
@@ -638,7 +753,7 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
                   onPressed: () {
                     setState(() {
                       _localQuote = Quote(
-                        id: widget.quoteId, userId: _localQuote.userId, status: _localQuote.status, createdAt: _localQuote.createdAt, clientName: _localQuote.clientName, clientPhone: _localQuote.clientPhone, clientCity: _localQuote.clientCity, clientState: _localQuote.clientState,
+                        id: widget.quoteId, userId: _localQuote.userId, customerId: _localQuote.customerId, status: _localQuote.status, createdAt: _localQuote.createdAt, clientName: _localQuote.clientName, clientPhone: _localQuote.clientPhone, clientCity: _localQuote.clientCity, clientState: _localQuote.clientState,
                         blanksList: _localQuote.blanksList, cabosList: _localQuote.cabosList, reelSeatsList: _localQuote.reelSeatsList, passadoresList: _localQuote.passadoresList, acessoriosList: _localQuote.acessoriosList,
                         extraLaborCost: _localQuote.extraLaborCost, totalPrice: _localQuote.totalPrice, customizationText: _localQuote.customizationText, finishedImages: _localQuote.finishedImages,
                         generalDiscount: 0.0,
@@ -658,7 +773,7 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
 
                     setState(() {
                       _localQuote = Quote(
-                        id: widget.quoteId, userId: _localQuote.userId, status: _localQuote.status, createdAt: _localQuote.createdAt, clientName: _localQuote.clientName, clientPhone: _localQuote.clientPhone, clientCity: _localQuote.clientCity, clientState: _localQuote.clientState,
+                        id: widget.quoteId, userId: _localQuote.userId, customerId: _localQuote.customerId, status: _localQuote.status, createdAt: _localQuote.createdAt, clientName: _localQuote.clientName, clientPhone: _localQuote.clientPhone, clientCity: _localQuote.clientCity, clientState: _localQuote.clientState,
                         blanksList: _localQuote.blanksList, cabosList: _localQuote.cabosList, reelSeatsList: _localQuote.reelSeatsList, passadoresList: _localQuote.passadoresList, acessoriosList: _localQuote.acessoriosList,
                         extraLaborCost: _localQuote.extraLaborCost, totalPrice: _localQuote.totalPrice, customizationText: _localQuote.customizationText, finishedImages: _localQuote.finishedImages,
                         generalDiscount: val,
@@ -678,56 +793,110 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
     );
   }
 
-  // --- LÓGICA DE EDITAR CLIENTE ---
-  void _showEditClientDialog() {
-    final nameCtrl = TextEditingController(text: _localQuote.clientName);
-    final phoneCtrl = TextEditingController(text: _localQuote.clientPhone);
-    final cityCtrl = TextEditingController(text: _localQuote.clientCity);
-    final stateCtrl = TextEditingController(text: _localQuote.clientState);
+  // --- LÓGICA DE EDITAR CLIENTE (ATUALIZADA) ---
+  
+  // Opção 1: Selecionar um NOVO cliente para este orçamento
+  void _selectNewClient() async {
+    final CustomerModel? result = await _pickCustomer(context);
+    if (result != null) {
+      _updateClientFromModel(result);
+    }
+  }
 
-    var phoneMask = MaskTextInputFormatter(
-      mask: '(##) #####-####', 
-      filter: { "#": RegExp(r'[0-9]') },
-      type: MaskAutoCompletionType.lazy
+  // Opção 2: Editar os DADOS do cliente atual (e salvar no banco)
+  void _editCurrentClientData() async {
+    CustomerModel? currentCustomer;
+    
+    // Tenta buscar o cliente atual pelo ID ou pelo nome
+    if (_localQuote.customerId != null && _localQuote.customerId!.isNotEmpty) {
+      currentCustomer = await _customerService.getCustomerById(_localQuote.customerId!);
+    }
+    
+    // Se não achou pelo ID, cria um objeto temporário com os dados do orçamento
+    currentCustomer ??= CustomerModel(
+      id: _localQuote.customerId ?? '', // Se for vazio, o form criará um novo
+      name: _localQuote.clientName,
+      phone: _localQuote.clientPhone,
+      city: _localQuote.clientCity,
+      state: _localQuote.clientState,
+      createdAt: Timestamp.now(),
     );
 
+    if (!mounted) return;
+
+    // Abre o Dialog do AdminCustomersScreen reutilizado
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text("Editar Dados do Cliente"),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: "Nome do Cliente", border: OutlineInputBorder())),
-              const SizedBox(height: 12),
-              TextField(controller: phoneCtrl, keyboardType: TextInputType.phone, inputFormatters: [phoneMask], decoration: const InputDecoration(labelText: "Telefone", border: OutlineInputBorder())),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(child: TextField(controller: cityCtrl, decoration: const InputDecoration(labelText: "Cidade", border: OutlineInputBorder()))),
-                  const SizedBox(width: 8),
-                  SizedBox(width: 80, child: TextField(controller: stateCtrl, decoration: const InputDecoration(labelText: "UF", border: OutlineInputBorder()))),
-                ],
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancelar")),
-          ElevatedButton(
-            onPressed: () {
-              if (nameCtrl.text.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("O nome é obrigatório.")));
-                return;
-              }
-              _updateClientData(name: nameCtrl.text, phone: phoneCtrl.text, city: cityCtrl.text, state: stateCtrl.text);
-              Navigator.pop(ctx);
-            },
-            child: const Text("Atualizar"),
-          )
-        ],
+      builder: (context) => CustomerFormDialog(
+        customer: currentCustomer,
+        onSave: (updatedModel) async {
+          // Salva no banco de clientes
+          await _customerService.saveCustomer(updatedModel);
+          
+          // Atualiza os dados no orçamento local
+          setState(() {
+             _localQuote = Quote(
+              id: widget.quoteId, 
+              userId: _localQuote.userId, 
+              customerId: updatedModel.id.isNotEmpty ? updatedModel.id : _localQuote.customerId, 
+              status: _localQuote.status, 
+              createdAt: _localQuote.createdAt,
+              clientName: updatedModel.name,
+              clientPhone: updatedModel.phone,
+              clientCity: updatedModel.city,
+              clientState: updatedModel.state,
+              blanksList: _localQuote.blanksList, 
+              cabosList: _localQuote.cabosList, 
+              reelSeatsList: _localQuote.reelSeatsList, 
+              passadoresList: _localQuote.passadoresList, 
+              acessoriosList: _localQuote.acessoriosList,
+              extraLaborCost: _localQuote.extraLaborCost, 
+              totalPrice: _localQuote.totalPrice, 
+              customizationText: _localQuote.customizationText, 
+              finishedImages: _localQuote.finishedImages,
+              generalDiscount: _localQuote.generalDiscount, 
+              generalDiscountType: _localQuote.generalDiscountType
+            );
+          });
+          
+          // Salva o orçamento com os novos dados
+          await _saveChanges(silent: true);
+          Navigator.pop(context);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Dados do cliente atualizados com sucesso!"))
+          );
+        },
       ),
+    );
+  }
+
+  void _updateClientFromModel(CustomerModel customer) {
+    setState(() {
+      _localQuote = Quote(
+        id: widget.quoteId, 
+        userId: _localQuote.userId, 
+        customerId: customer.id, // Atualiza ID do cliente
+        status: _localQuote.status, 
+        createdAt: _localQuote.createdAt,
+        clientName: customer.name,
+        clientPhone: customer.phone,
+        clientCity: customer.city,
+        clientState: customer.state,
+        blanksList: _localQuote.blanksList, 
+        cabosList: _localQuote.cabosList, 
+        reelSeatsList: _localQuote.reelSeatsList, 
+        passadoresList: _localQuote.passadoresList, 
+        acessoriosList: _localQuote.acessoriosList,
+        extraLaborCost: _localQuote.extraLaborCost, 
+        totalPrice: _localQuote.totalPrice, 
+        customizationText: _localQuote.customizationText, 
+        finishedImages: _localQuote.finishedImages,
+        generalDiscount: _localQuote.generalDiscount, 
+        generalDiscountType: _localQuote.generalDiscountType
+      );
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text("Cliente alterado para: ${customer.name}"), duration: const Duration(seconds: 2))
     );
   }
 
@@ -746,7 +915,6 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
           fileBytes: bytes,
           fileName: fileName, 
           fileExtension: ext, 
-          //folder: 'quotes/${widget.quoteId}/finished', 
           onProgress: (_) {}
         );
         if (result != null) {
@@ -803,7 +971,7 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
         if (mounted) {
           setState(() {
             _localQuote = Quote(
-              id: widget.quoteId, userId: _localQuote.userId, status: newStatus, createdAt: _localQuote.createdAt, clientName: _localQuote.clientName, clientPhone: _localQuote.clientPhone, clientCity: _localQuote.clientCity, clientState: _localQuote.clientState,
+              id: widget.quoteId, userId: _localQuote.userId, customerId: _localQuote.customerId, status: newStatus, createdAt: _localQuote.createdAt, clientName: _localQuote.clientName, clientPhone: _localQuote.clientPhone, clientCity: _localQuote.clientCity, clientState: _localQuote.clientState,
               blanksList: _localQuote.blanksList, cabosList: _localQuote.cabosList, reelSeatsList: _localQuote.reelSeatsList, passadoresList: _localQuote.passadoresList, acessoriosList: _localQuote.acessoriosList,
               extraLaborCost: _localQuote.extraLaborCost, totalPrice: _localQuote.totalPrice, customizationText: _localQuote.customizationText, finishedImages: _localQuote.finishedImages,
               generalDiscount: _localQuote.generalDiscount, generalDiscountType: _localQuote.generalDiscountType
@@ -817,21 +985,6 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
         if(mounted) setState(() => _isLoading = false);
       }
     }
-  }
-
-  void _updateClientData({String? name, String? phone, String? city, String? state}) {
-    setState(() {
-      _localQuote = Quote(
-        id: widget.quoteId, userId: _localQuote.userId, status: _localQuote.status, createdAt: _localQuote.createdAt,
-        clientName: name ?? _localQuote.clientName,
-        clientPhone: phone ?? _localQuote.clientPhone,
-        clientCity: city ?? _localQuote.clientCity,
-        clientState: state ?? _localQuote.clientState,
-        blanksList: _localQuote.blanksList, cabosList: _localQuote.cabosList, reelSeatsList: _localQuote.reelSeatsList, passadoresList: _localQuote.passadoresList, acessoriosList: _localQuote.acessoriosList,
-        extraLaborCost: _localQuote.extraLaborCost, totalPrice: _localQuote.totalPrice, customizationText: _localQuote.customizationText, finishedImages: _localQuote.finishedImages,
-        generalDiscount: _localQuote.generalDiscount, generalDiscountType: _localQuote.generalDiscountType
-      );
-    });
   }
 
   void _recalculateTotal() {
@@ -868,7 +1021,7 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
 
     setState(() {
       _localQuote = Quote(
-        id: widget.quoteId, userId: _localQuote.userId, status: _localQuote.status, createdAt: _localQuote.createdAt,
+        id: widget.quoteId, userId: _localQuote.userId, customerId: _localQuote.customerId, status: _localQuote.status, createdAt: _localQuote.createdAt,
         clientName: _localQuote.clientName, clientPhone: _localQuote.clientPhone, clientCity: _localQuote.clientCity, clientState: _localQuote.clientState,
         blanksList: _localQuote.blanksList, cabosList: _localQuote.cabosList, reelSeatsList: _localQuote.reelSeatsList, passadoresList: _localQuote.passadoresList, acessoriosList: _localQuote.acessoriosList,
         extraLaborCost: _localQuote.extraLaborCost, totalPrice: total, 
@@ -896,12 +1049,8 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
   Future<void> _generatePdf() async {
     setState(() => _isLoading = true);
     try {
-      // Salva antes de gerar para garantir dados atualizados
       await _saveChanges(silent: true);
-      
-      // Gera o PDF
       await PdfService.generateAndPrintQuote(_localQuote);
-      
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Erro ao gerar PDF: $e")));
     } finally {
@@ -914,7 +1063,7 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
     if (!silent) setState(() => _isLoading = true);
     
     _localQuote = Quote(
-      id: widget.quoteId, userId: _localQuote.userId, status: _localQuote.status, createdAt: _localQuote.createdAt,
+      id: widget.quoteId, userId: _localQuote.userId, customerId: _localQuote.customerId, status: _localQuote.status, createdAt: _localQuote.createdAt,
       clientName: _localQuote.clientName, clientPhone: _localQuote.clientPhone, clientCity: _localQuote.clientCity, clientState: _localQuote.clientState,
       blanksList: _localQuote.blanksList, cabosList: _localQuote.cabosList, reelSeatsList: _localQuote.reelSeatsList, passadoresList: _localQuote.passadoresList, acessoriosList: _localQuote.acessoriosList,
       extraLaborCost: _localQuote.extraLaborCost, totalPrice: _localQuote.totalPrice, 
@@ -1368,10 +1517,6 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
     );
   }
 
- // --- WIDGETS DE CAMPOS DE ENTRADA ---
-  // (Mantidos no build principal: Mão de Obra e Customização)
-  // ...
-  
   @override
   Widget build(BuildContext context) {
     Color statusColor = _statusColors[_localQuote.status] ?? Colors.grey;
@@ -1425,7 +1570,30 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
                             const Icon(Icons.person, color: Colors.blueGrey),
                             const SizedBox(width: 8),
                             Expanded(child: Text(_localQuote.clientName.toUpperCase(), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87))),
-                            IconButton(icon: const Icon(Icons.edit, size: 20, color: Colors.blueGrey), onPressed: _showEditClientDialog, tooltip: 'Editar Dados do Cliente'),
+                            
+                            // --- MENU DE AÇÕES DO CLIENTE (ATUALIZADO) ---
+                            PopupMenuButton<String>(
+                              icon: const Icon(Icons.edit, size: 20, color: Colors.blueGrey),
+                              tooltip: 'Opções do Cliente',
+                              onSelected: (String result) {
+                                if (result == 'edit_data') {
+                                  _editCurrentClientData();
+                                } else if (result == 'select_new') {
+                                  _selectNewClient();
+                                }
+                              },
+                              itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                                const PopupMenuItem<String>(
+                                  value: 'edit_data',
+                                  child: Row(children: [Icon(Icons.edit_note, size: 20), SizedBox(width: 10), Text('Alterar Dados do Cliente')]),
+                                ),
+                                const PopupMenuItem<String>(
+                                  value: 'select_new',
+                                  child: Row(children: [Icon(Icons.person_search, size: 20), SizedBox(width: 10), Text('Selecionar Outro Cliente')]),
+                                ),
+                              ],
+                            ),
+                            
                             const SizedBox(width: 8),
                             GestureDetector(
                               onTap: _changeStatus,
@@ -1492,7 +1660,7 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
                                 onChanged: (val) {
                                   setState(() {
                                     _localQuote = Quote(
-                                      id: widget.quoteId, userId: _localQuote.userId, status: _localQuote.status, createdAt: _localQuote.createdAt, clientName: _localQuote.clientName, clientPhone: _localQuote.clientPhone, clientCity: _localQuote.clientCity, clientState: _localQuote.clientState,
+                                      id: widget.quoteId, userId: _localQuote.userId, customerId: _localQuote.customerId, status: _localQuote.status, createdAt: _localQuote.createdAt, clientName: _localQuote.clientName, clientPhone: _localQuote.clientPhone, clientCity: _localQuote.clientCity, clientState: _localQuote.clientState,
                                       blanksList: _localQuote.blanksList, cabosList: _localQuote.cabosList, reelSeatsList: _localQuote.reelSeatsList, passadoresList: _localQuote.passadoresList, acessoriosList: _localQuote.acessoriosList,
                                       extraLaborCost: double.tryParse(val.replaceAll(',', '.')) ?? 0.0,
                                       totalPrice: _localQuote.totalPrice, customizationText: _localQuote.customizationText, 
@@ -1506,7 +1674,6 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
                             )
                           ],
                         ),
-                        // ROW DO DESCONTO GERAL (NOVO)
                         const SizedBox(height: 12),
                         InkWell(
                           onTap: _showGeneralDiscountDialog,
@@ -1555,8 +1722,6 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
     );
   }
 }
-
-// --- MODAL SELECTOR ---
 
 class ComponentSelectorModal extends StatefulWidget {
   final String title;
@@ -1705,7 +1870,6 @@ class _ComponentSelectorModalState extends State<ComponentSelectorModal> {
                                 double vCostRaw = (vMap['costPrice'] is num) ? (vMap['costPrice'] as num).toDouble() : 0.0;
                                 final vCost = (vCostRaw > 0) ? vCostRaw : baseCost;
 
-                                // LÓGICA DE IMAGEM DA VARIAÇÃO
                                 final vImg = vMap['imageUrl']; 
                                 final hasVarImg = vImg != null && vImg.toString().isNotEmpty;
                                 final selectedImg = hasVarImg ? vImg : data['imageUrl'];

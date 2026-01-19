@@ -6,6 +6,11 @@ import '../models/quote_model.dart';
 
 class WhatsAppService {
   
+  // ADICIONADO: Método público genérico para abrir conversa
+  Future<void> openWhatsApp({required String phone, required String message}) async {
+    await _launchWhatsApp(message, targetPhone: phone);
+  }
+
   // --- Helper: Busca o Telefone do Fornecedor ---
   static Future<String> _getAdminPhoneNumber() async {
     try {
@@ -60,8 +65,6 @@ class WhatsAppService {
     }
 
     buffer.writeln("-------------------------");
-    //buffer.writeln("*VALOR TOTAL: R\$ ${provider.totalPrice.toStringAsFixed(2)}*");
-    //buffer.writeln("-------------------------");
     buffer.writeln("Aguardo retorno do orçamento!");
 
     String adminPhone = await _getAdminPhoneNumber();
@@ -140,8 +143,6 @@ class WhatsAppService {
 
     // LÓGICA ESPECÍFICA PARA WEB (PWA)
     if (kIsWeb) {
-      // Na Web, sempre usamos a URL https://wa.me.
-      // O navegador (Chrome/Safari) cuidará de abrir o app se estiver instalado.
       if (await canLaunchUrl(webUrl)) {
         await launchUrl(webUrl, mode: LaunchMode.externalApplication);
       } else {
@@ -156,14 +157,13 @@ class WhatsAppService {
       if (await canLaunchUrl(appUrl)) {
         await launchUrl(appUrl, mode: LaunchMode.externalApplication);
       } 
-      // 2. Fallback para Web Link (caso não tenha app instalado ou restrição do iOS)
+      // 2. Fallback para Web Link
       else if (await canLaunchUrl(webUrl)) {
         await launchUrl(webUrl, mode: LaunchMode.externalApplication);
       } else {
         throw 'Não foi possível abrir o WhatsApp.';
       }
     } catch (e) {
-      // Última tentativa forçada
       await launchUrl(webUrl, mode: LaunchMode.externalApplication);
     }
   }

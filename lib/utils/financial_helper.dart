@@ -1,3 +1,4 @@
+import 'package:intl/intl.dart';
 import '../models/quote_model.dart';
 
 class FinancialMetrics {
@@ -15,6 +16,11 @@ class FinancialMetrics {
 }
 
 class FinancialHelper {
+  // ADICIONADO: Método para formatar moeda
+  static String formatCurrency(double value) {
+    return NumberFormat.simpleCurrency(locale: 'pt_BR').format(value);
+  }
+
   /// Calcula métricas financeiras completas para um Orçamento (Quote)
   static FinancialMetrics calculateQuoteMetrics(Quote quote) {
     double cost = 0.0;
@@ -30,8 +36,6 @@ class FinancialHelper {
     double revenue = quote.totalPrice; 
     
     // Lucro Bruto = Receita - Custo das Peças
-    // (Assumindo que a Mão de Obra Extra é 100% margem sobre o serviço, 
-    // mas o custo base das peças deve ser abatido).
     double profit = revenue - cost;
 
     // Margem = (Lucro / Receita) * 100
@@ -48,7 +52,7 @@ class FinancialHelper {
   /// Helper interno para somar Custo de uma lista de mapas
   static double _sumListCost(List<Map<String, dynamic>> items) {
     return items.fold(0.0, (sum, item) {
-      double cost = (item['cost'] ?? 0.0).toDouble();
+      double cost = (item['cost'] ?? item['costPrice'] ?? 0.0).toDouble();
       int qty = (item['quantity'] ?? 1).toInt();
       return sum + (cost * qty);
     });

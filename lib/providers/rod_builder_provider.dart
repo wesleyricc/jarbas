@@ -22,6 +22,7 @@ class RodBuilderProvider extends ChangeNotifier {
   final QuoteService _quoteService = QuoteService(); 
 
   // Dados do Cliente
+  String? _selectedCustomerId; // NOVO: ID do cliente selecionado
   String clientName = '';
   String clientPhone = '';
   String clientCity = '';
@@ -40,9 +41,10 @@ class RodBuilderProvider extends ChangeNotifier {
   double _totalPrice = 0.0;
   
   // Configurações Globais
-  double _globalCustomizationPrice = 0.0; // Valor vindo das configurações
+  double _globalCustomizationPrice = 0.0; 
 
   // Getters
+  String? get selectedCustomerId => _selectedCustomerId;
   List<RodItem> get selectedBlanksList => _selectedBlanks;
   List<RodItem> get selectedCabosList => _selectedCabos;
   List<RodItem> get selectedReelSeatsList => _selectedReelSeats;
@@ -179,17 +181,27 @@ class RodBuilderProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void updateClientInfo({required String name, required String phone, required String city, required String state}) {
+  // Atualizado para aceitar customerId opcional
+  void updateClientInfo({
+    required String name, 
+    required String phone, 
+    required String city, 
+    required String state,
+    String? customerId
+  }) {
     clientName = name;
     clientPhone = phone;
     clientCity = city;
     clientState = state;
+    if (customerId != null) {
+      _selectedCustomerId = customerId;
+    }
     notifyListeners();
   }
 
   void setCustomizationText(String text) {
     customizationText = text;
-    _calculateTotalPrice(); // Recalcula, pois a personalização pode ter custo
+    _calculateTotalPrice();
     notifyListeners();
   }
 
@@ -199,14 +211,13 @@ class RodBuilderProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // CORREÇÃO: Busca o preço da customização nas configurações
   Future<void> fetchSettings() async {
     try {
       final doc = await FirebaseFirestore.instance.collection('settings').doc('global_config').get();
       if (doc.exists && doc.data() != null) {
         final data = doc.data()!;
         _globalCustomizationPrice = (data['customizationPrice'] ?? 0.0).toDouble();
-        _calculateTotalPrice(); // Recalcula caso já existam itens
+        _calculateTotalPrice(); 
         notifyListeners();
       }
     } catch (e) {
@@ -214,7 +225,6 @@ class RodBuilderProvider extends ChangeNotifier {
     }
   }
 
-  // CORREÇÃO: Adiciona o custo da personalização ao total
   void _calculateTotalPrice() {
     double total = 0.0;
     
@@ -232,7 +242,6 @@ class RodBuilderProvider extends ChangeNotifier {
     
     total += _extraLaborCost;
     
-    // Soma o custo da personalização se houver texto
     if (customizationText.isNotEmpty) {
       total += _globalCustomizationPrice;
     }
@@ -241,6 +250,7 @@ class RodBuilderProvider extends ChangeNotifier {
   }
 
   void clearBuild() {
+    _selectedCustomerId = null;
     clientName = ''; clientPhone = ''; clientCity = ''; clientState = '';
     _selectedBlanks.clear();
     _selectedCabos.clear();
@@ -250,36 +260,34 @@ class RodBuilderProvider extends ChangeNotifier {
     customizationText = '';
     _extraLaborCost = 0.0;
     _totalPrice = 0.0;
-    // Não zera _globalCustomizationPrice, pois é uma configuração do sistema
     notifyListeners();
   }
   
   Future<bool> loadKit(KitModel kit) async {
       final FirebaseFirestore firestore = FirebaseFirestore.instance;
       
-      Future<Component?> fetchComp(String id) async {
-        if (id.isEmpty) return null;
+      Future<RodItem?> fetchItem(Map<String, dynamic> itemMap) async {
+        final id = itemMap['id'];
+        if (id == null || id.isEmpty) return null;
         try {
           final doc = await firestore.collection(AppConstants.colComponents).doc(id).get();
-          if (doc.exists) return Component.fromFirestore(doc);
+          if (doc.exists) {
+             return RodItem(
+              component: Component.fromFirestore(doc),
+              quantity: (itemMap['quantity'] ?? 1).toInt(),
+              variation: itemMap['variation'],
+            );
+          }
         } catch (e) {
           print("Erro carregando componente: $e");
         }
         return null;
       }
 
-      Future<void> loadList(List<Map<String, dynamic>> source, List<RodItem> target) async {
-        target.clear();
-        for (var itemMap in source) {
-          final comp = await fetchComp(itemMap['id']);
-          if (comp != null) {
-            target.add(RodItem(
-              component: comp,
-              quantity: (itemMap['quantity'] ?? 1).toInt(),
-              variation: itemMap['variation'],
-            ));
-          }
-        }
+      Future<List<RodItem>> processList(List<Map<String, dynamic>> source) async {
+        final futures = source.map((item) => fetchItem(item));
+        final results = await Future.wait(futures);
+        return results.whereType<RodItem>().toList();
       }
 
       _selectedBlanks.clear();
@@ -288,15 +296,28 @@ class RodBuilderProvider extends ChangeNotifier {
       _selectedPassadores.clear();
       _selectedAcessorios.clear();
 
-      await loadList(kit.blanksIds, _selectedBlanks);
-      await loadList(kit.cabosIds, _selectedCabos);
-      await loadList(kit.reelSeatsIds, _selectedReelSeats);
-      await loadList(kit.passadoresIds, _selectedPassadores);
-      await loadList(kit.acessoriosIds, _selectedAcessorios);
+      try {
+        final results = await Future.wait([
+          processList(kit.blanksIds),
+          processList(kit.cabosIds),
+          processList(kit.reelSeatsIds),
+          processList(kit.passadoresIds),
+          processList(kit.acessoriosIds),
+        ]);
 
-      _calculateTotalPrice();
-      notifyListeners();
-      return true;
+        _selectedBlanks.addAll(results[0]);
+        _selectedCabos.addAll(results[1]);
+        _selectedReelSeats.addAll(results[2]);
+        _selectedPassadores.addAll(results[3]);
+        _selectedAcessorios.addAll(results[4]);
+
+        _calculateTotalPrice();
+        notifyListeners();
+        return true;
+      } catch (e) {
+        print("Erro crítico ao carregar kit: $e");
+        return false;
+      }
   }
 
   Future<bool> saveQuote(String userId, {required String status}) async {
@@ -314,6 +335,7 @@ class RodBuilderProvider extends ChangeNotifier {
 
     final quote = Quote(
       userId: userId,
+      customerId: _selectedCustomerId, // Salva o ID do cliente se houver
       status: status,
       createdAt: Timestamp.now(),
       clientName: clientName,
@@ -344,30 +366,26 @@ class RodBuilderProvider extends ChangeNotifier {
     clientPhone = quote.clientPhone;
     clientCity = quote.clientCity;
     clientState = quote.clientState;
+    _selectedCustomerId = quote.customerId; // Restaura o ID do cliente
+
     customizationText = quote.customizationText ?? '';
     _extraLaborCost = quote.extraLaborCost;
 
     final FirebaseFirestore firestore = FirebaseFirestore.instance;
 
-    Future<Component?> findComponentByName(String name) async {
-       final snapshot = await firestore.collection(AppConstants.colComponents)
+    Future<RodItem> fetchQuoteItem(Map<String, dynamic> item) async {
+        String name = item['name'];
+        Component? comp;
+        
+        final snapshot = await firestore.collection(AppConstants.colComponents)
            .where('name', isEqualTo: name)
            .limit(1)
            .get();
        
-       if (snapshot.docs.isNotEmpty) {
-         return Component.fromFirestore(snapshot.docs.first);
-       }
-       return null;
-    }
-
-    Future<void> fillList(List<Map<String, dynamic>> source, List<RodItem> target) async {
-      target.clear();
-      for (var item in source) {
-        String name = item['name'];
-        Component? comp = await findComponentByName(name);
-        
-        comp ??= Component(
+        if (snapshot.docs.isNotEmpty) {
+          comp = Component.fromFirestore(snapshot.docs.first);
+        } else {
+          comp = Component(
             id: '', 
             name: name, 
             description: '',
@@ -379,22 +397,45 @@ class RodBuilderProvider extends ChangeNotifier {
             variations: [],
             attributes: {},
           );
+        }
 
-        target.add(RodItem(
+        return RodItem(
           component: comp,
           quantity: (item['quantity'] ?? 1).toInt(),
           variation: item['variation'],
-        ));
-      }
+        );
     }
 
-    await fillList(quote.blanksList, _selectedBlanks);
-    await fillList(quote.cabosList, _selectedCabos);
-    await fillList(quote.reelSeatsList, _selectedReelSeats);
-    await fillList(quote.passadoresList, _selectedPassadores);
-    await fillList(quote.acessoriosList, _selectedAcessorios);
+    Future<List<RodItem>> processQuoteList(List<Map<String, dynamic>> source) async {
+      final futures = source.map((item) => fetchQuoteItem(item));
+      return await Future.wait(futures);
+    }
 
-    _calculateTotalPrice();
-    notifyListeners();
+    _selectedBlanks.clear();
+    _selectedCabos.clear();
+    _selectedReelSeats.clear();
+    _selectedPassadores.clear();
+    _selectedAcessorios.clear();
+
+    try {
+      final results = await Future.wait([
+        processQuoteList(quote.blanksList),
+        processQuoteList(quote.cabosList),
+        processQuoteList(quote.reelSeatsList),
+        processQuoteList(quote.passadoresList),
+        processQuoteList(quote.acessoriosList),
+      ]);
+
+      _selectedBlanks.addAll(results[0]);
+      _selectedCabos.addAll(results[1]);
+      _selectedReelSeats.addAll(results[2]);
+      _selectedPassadores.addAll(results[3]);
+      _selectedAcessorios.addAll(results[4]);
+
+      _calculateTotalPrice();
+      notifyListeners();
+    } catch (e) {
+      print("Erro ao carregar quote: $e");
+    }
   }
 }

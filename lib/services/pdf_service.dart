@@ -36,21 +36,21 @@ class PdfService {
           // 1. Logo Centralizada e Grande
           _buildCenteredLogoHeader(profileImage),
 
-          pw.SizedBox(height: 30),
+          pw.SizedBox(height: 20),
 
           // 2. Dados do Cliente e do Orçamento (reorganizado)
           _buildClientAndQuoteInfo(quote),
 
-          pw.SizedBox(height: 20),
+          pw.SizedBox(height: 10),
           pw.Divider(color: PdfColors.grey300),
-          pw.SizedBox(height: 20),
+          pw.SizedBox(height: 10),
 
           // 3. Lista de Itens Simplificada
           _buildSimpleItemsList(quote),
 
-          pw.SizedBox(height: 30),
+          pw.SizedBox(height: 10),
           pw.Divider(color: PdfColors.grey300),
-          pw.SizedBox(height: 20),
+          pw.SizedBox(height: 10),
 
           // 4. Total Simplificado
           _buildSimpleTotal(quote),

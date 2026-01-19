@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../services/auth_service.dart';
 import '../services/user_service.dart';
 import '../services/whatsapp_service.dart';
+import 'admin_customers_screen.dart';
 import 'rod_builder_screen.dart';
 
 // Import das Telas Admin
@@ -54,7 +55,7 @@ class _AdminHomeStructureState extends State<_AdminHomeStructure> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 4, 
+      length: 5, 
       child: Scaffold(
         backgroundColor: Colors.grey[50],
         appBar: AppBar(
@@ -95,6 +96,7 @@ class _AdminHomeStructureState extends State<_AdminHomeStructure> {
               Tab(icon: Icon(Icons.list_alt), text: "Orçamentos"),
               Tab(icon: Icon(Icons.inventory_2), text: "Componentes"),
               Tab(icon: Icon(Icons.view_quilt), text: "Kits"),
+              Tab(icon: Icon(Icons.person), text: "Clientes"),
             ],
           ),
         ),
@@ -104,6 +106,7 @@ class _AdminHomeStructureState extends State<_AdminHomeStructure> {
             AdminQuotesScreen(),
             AdminComponentsScreen(),
             AdminKitsScreen(),
+            AdminCustomersScreen(),
           ],
         ),
       ),

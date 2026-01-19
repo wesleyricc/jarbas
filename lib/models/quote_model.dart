@@ -2,14 +2,16 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../utils/app_constants.dart';
 
 class Quote {
-  final String id;
+  final String? id;
   final String userId;
+  final String? customerId; // NOVO: ID do Cliente vinculado
+  final String status; // 'pendente', 'aprovado', 'em_producao', 'concluido'
+  final Timestamp createdAt;
   final String clientName;
   final String clientPhone;
   final String clientCity;
   final String clientState;
-  final String status;
-  final Timestamp createdAt;
+
   
   // Listas de Itens
   final List<Map<String, dynamic>> blanksList;
@@ -29,8 +31,9 @@ class Quote {
   final List<String> finishedImages;
 
   Quote({
-    this.id = '',
+    this.id,
     required this.userId,
+    this.customerId,
     required this.status,
     required this.createdAt,
     required this.clientName,
@@ -50,34 +53,12 @@ class Quote {
     this.finishedImages = const [],
   });
 
-  Map<String, dynamic> toMap() {
-    return {
-      'userId': userId,
-      'status': status,
-      'createdAt': createdAt,
-      'clientName': clientName,
-      'clientPhone': clientPhone,
-      'clientCity': clientCity,
-      'clientState': clientState,
-      'blanksList': blanksList,
-      'cabosList': cabosList,
-      'reelSeatsList': reelSeatsList,
-      'passadoresList': passadoresList,
-      'acessoriosList': acessoriosList,
-      'extraLaborCost': extraLaborCost,
-      'totalPrice': totalPrice,
-      'generalDiscount': generalDiscount, // Salva no banco
-      'generalDiscountType': generalDiscountType, // Salva no banco
-      'customizationText': customizationText,
-      'finishedImages': finishedImages,
-    };
-  }
-
   factory Quote.fromFirestore(DocumentSnapshot doc) {
     Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
     return Quote(
       id: doc.id,
       userId: data['userId'] ?? '',
+      customerId: data['customerId'],
       status: data['status'] ?? AppConstants.statusPendente,
       createdAt: data['createdAt'] ?? Timestamp.now(),
       clientName: data['clientName'] ?? '',
@@ -98,4 +79,28 @@ class Quote {
       finishedImages: List<String>.from(data['finishedImages'] ?? []),
     );
   }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'userId': userId,
+      'customerId': customerId,
+      'status': status,
+      'createdAt': createdAt,
+      'clientName': clientName,
+      'clientPhone': clientPhone,
+      'clientCity': clientCity,
+      'clientState': clientState,
+      'blanksList': blanksList,
+      'cabosList': cabosList,
+      'reelSeatsList': reelSeatsList,
+      'passadoresList': passadoresList,
+      'acessoriosList': acessoriosList,
+      'extraLaborCost': extraLaborCost,
+      'totalPrice': totalPrice,
+      'generalDiscount': generalDiscount, // Salva no banco
+      'generalDiscountType': generalDiscountType, // Salva no banco
+      'customizationText': customizationText,
+      'finishedImages': finishedImages,
+    };
+}
 }
