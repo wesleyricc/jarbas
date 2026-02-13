@@ -8,7 +8,9 @@ import '../../../models/component_model.dart';
 import '../../../services/component_service.dart';
 import '../../../services/storage_service.dart';
 import '../../../services/config_service.dart';
+import '../../../services/web_scraping_service.dart'; // Import do Scraper
 import '../../../utils/app_constants.dart';
+import '../../../utils/financial_helper.dart'; // Import para formatação de moeda
 
 class ComponentFormScreen extends StatefulWidget {
   final Component? component; 
@@ -25,6 +27,7 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
   final ComponentService _componentService = ComponentService();
   final StorageService _storageService = StorageService();
   final ConfigService _configService = ConfigService();
+  final WebScrapingService _scraper = WebScrapingService(); // Instância do Scraper
 
   bool _isLoading = false;
 
@@ -50,15 +53,20 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
   double _defaultMargin = 0.0; 
   double _supplierDiscount = 0.0;
 
+  // --- VARIÁVEIS DE VALIDAÇÃO DE PREÇO ---
+  bool _isCheckingPrice = false;
+  double? _scrapedPrice;
+  String? _scrapeMessage;
+
   @override
   void initState() {
     super.initState();
     _nameController = TextEditingController(text: widget.component?.name ?? '');
     _descController = TextEditingController(text: widget.component?.description ?? '');
     
-    _supplierPriceController = TextEditingController(text: widget.component?.supplierPrice.toString() ?? '');
-    _costPriceController = TextEditingController(text: widget.component?.costPrice.toString() ?? '');
-    _priceController = TextEditingController(text: widget.component?.price.toString() ?? '');
+    _supplierPriceController = TextEditingController(text: widget.component?.supplierPrice.toStringAsFixed(2) ?? '');
+    _costPriceController = TextEditingController(text: widget.component?.costPrice.toStringAsFixed(2) ?? '');
+    _priceController = TextEditingController(text: widget.component?.price.toStringAsFixed(2) ?? '');
     
     _stockController = TextEditingController(text: widget.component?.stock.toString() ?? '');
     _supplierLinkController = TextEditingController(text: widget.component?.supplierLink ?? '');
@@ -66,7 +74,7 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
     _selectedCategoryKey = widget.component?.category;
     _currentImageUrl = widget.component?.imageUrl;
 
-    // Carregar variações existentes com os novos campos
+    // Carregar variações existentes
     if (widget.component != null) {
       for (var v in widget.component!.variations) {
         _variationsUIList.add({
@@ -104,22 +112,72 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
 
   // --- CÁLCULOS TELA PRINCIPAL ---
   void _calculateCostPrice() {
-    String supplierText = _supplierPriceController.text;
+    // Se estivermos aplicando um preço raspado, evitamos loop ou recálculo indesejado se necessário,
+    // mas aqui o comportamento padrão é reativo ao input do usuário.
+    String supplierText = _supplierPriceController.text.replaceAll(',', '.');
     if (supplierText.isEmpty) return;
     double supplierVal = double.tryParse(supplierText) ?? 0.0;
     double costVal = supplierVal * (1 - (_supplierDiscount / 100));
-    String newText = costVal.toStringAsFixed(2);
-    if (_costPriceController.text != newText) _costPriceController.text = newText;
+    
+    // Atualiza apenas se o foco estiver no campo de fornecedor ou for uma ação programática
+    // Para evitar conflito, verificamos se o valor mudou significativamente
+    if ((double.tryParse(_costPriceController.text.replaceAll(',', '.')) ?? 0.0) != costVal) {
+       _costPriceController.text = costVal.toStringAsFixed(2);
+    }
   }
 
   void _calculateSellingPrice() {
-    String costText = _costPriceController.text;
+    String costText = _costPriceController.text.replaceAll(',', '.');
     if (costText.isEmpty) return;
     if (_defaultMargin <= 0) return; 
     double cost = double.tryParse(costText) ?? 0.0;
     double sellingPrice = cost * (1 + (_defaultMargin / 100));
-    String newText = sellingPrice.toStringAsFixed(2);
-    if (_priceController.text != newText) _priceController.text = newText;
+    
+    if ((double.tryParse(_priceController.text.replaceAll(',', '.')) ?? 0.0) != sellingPrice) {
+      _priceController.text = sellingPrice.toStringAsFixed(2);
+    }
+  }
+
+  // --- NOVA FUNCIONALIDADE: RASPAGEM DE DADOS ---
+  Future<void> _checkSupplierPrice() async {
+    final url = _supplierLinkController.text.trim();
+    if (url.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Insira o Link do Fornecedor primeiro.")));
+      return;
+    }
+
+    setState(() {
+      _isCheckingPrice = true;
+      _scrapedPrice = null;
+      _scrapeMessage = null;
+    });
+
+    final price = await _scraper.fetchPriceFromUrl(url);
+
+    if (mounted) {
+      setState(() {
+        _isCheckingPrice = false;
+        if (price != null) {
+          _scrapedPrice = price;
+        } else {
+          _scrapeMessage = "Não foi possível identificar o preço no link.";
+        }
+      });
+    }
+  }
+
+  void _applyScrapedPrice() {
+    if (_scrapedPrice != null) {
+      setState(() {
+        _supplierPriceController.text = _scrapedPrice!.toStringAsFixed(2);
+        // O listener _calculateCostPrice será disparado automaticamente,
+        // que por sua vez disparará _calculateSellingPrice.
+        // Limpa o estado de raspagem após aplicar
+        _scrapedPrice = null;
+        _scrapeMessage = null;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Preços atualizados conforme fornecedor!")));
+    }
   }
 
   // --- UPLOAD E LINKS ---
@@ -161,7 +219,9 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
     }
   }
 
-  // --- DIALOG DE VARIAÇÕES (COM PRECIFICAÇÃO COMPLETA) ---
+  // ... (MÉTODOS _openVariationDialog, _removeVariation, _saveComponent MANTIDOS IGUAIS AO ANTERIOR, omitindo para brevidade pois não mudaram a lógica, apenas o layout chama eles)
+  // Vou incluir o código completo para garantir que não quebre nada.
+
   void _openVariationDialog({int? index}) {
     final isEditing = index != null;
     final Map<String, dynamic> currentData = isEditing 
@@ -176,21 +236,17 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
             'newImageBytes': null
           };
 
-    // Controladores
     final nameCtrl = TextEditingController(text: currentData['name']);
     final stockCtrl = TextEditingController(text: currentData['stock'].toString());
     
-    // Inicializa preços com 0.0 ou valor existente
     final supplierCtrl = TextEditingController(text: (currentData['supplierPrice'] as double).toStringAsFixed(2));
     final costCtrl = TextEditingController(text: (currentData['costPrice'] as double).toStringAsFixed(2));
     final priceCtrl = TextEditingController(text: (currentData['price'] as double).toStringAsFixed(2));
 
-    // Imagem
     Uint8List? dialogImageBytes = currentData['newImageBytes'];
     String? dialogImageUrl = currentData['imageUrl'];
     String? dialogImageExt = currentData['newImageExt'];
 
-    // --- Lógica de Cálculo Interna do Dialog ---
     void calcVarCost() {
       double supplier = double.tryParse(supplierCtrl.text.replaceAll(',', '.')) ?? 0.0;
       double cost = supplier * (1 - (_supplierDiscount / 100));
@@ -205,7 +261,6 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
       }
     }
 
-    // Adiciona Listeners
     supplierCtrl.addListener(() { calcVarCost(); calcVarSell(); });
     costCtrl.addListener(() { calcVarSell(); });
 
@@ -214,7 +269,6 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
       builder: (ctx) {
         return StatefulBuilder(
           builder: (context, setStateDialog) {
-            
             Future<void> pickVarImage() async {
               final ImagePicker picker = ImagePicker();
               final XFile? image = await picker.pickImage(source: ImageSource.gallery, maxWidth: 600, imageQuality: 80);
@@ -235,7 +289,6 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Imagem
                     GestureDetector(
                       onTap: pickVarImage,
                       child: Container(
@@ -253,12 +306,10 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
                     TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Nome / Cor', border: OutlineInputBorder(), isDense: true)),
                     const SizedBox(height: 12),
                     TextField(controller: stockCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Estoque (Qtd)', border: OutlineInputBorder(), isDense: true)),
-                    
                     const SizedBox(height: 12),
                     const Divider(),
                     const Text("Precificação Específica (Opcional)", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blueGrey)),
                     const SizedBox(height: 8),
-                    
                     Row(
                       children: [
                         Expanded(child: TextField(controller: supplierCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Tabela', border: OutlineInputBorder(), isDense: true))),
@@ -268,12 +319,6 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
                     ),
                     const SizedBox(height: 8),
                     TextField(controller: priceCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Venda', border: OutlineInputBorder(), isDense: true)),
-                    
-                    const SizedBox(height: 4),
-                    const Text(
-                      "Se deixar os preços zerados, o sistema usará o preço do componente principal.",
-                      style: TextStyle(fontSize: 10, color: Colors.grey, fontStyle: FontStyle.italic),
-                    ),
                   ],
                 ),
               ),
@@ -282,28 +327,19 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
                 ElevatedButton(
                   onPressed: () {
                     if (nameCtrl.text.isEmpty) return;
-                    
                     final newData = {
                       'id': isEditing ? currentData['id'] : const Uuid().v4(),
                       'name': nameCtrl.text,
                       'stock': int.tryParse(stockCtrl.text) ?? 0,
-                      
-                      // NOVOS CAMPOS
                       'supplierPrice': double.tryParse(supplierCtrl.text.replaceAll(',', '.')) ?? 0.0,
                       'costPrice': double.tryParse(costCtrl.text.replaceAll(',', '.')) ?? 0.0,
                       'price': double.tryParse(priceCtrl.text.replaceAll(',', '.')) ?? 0.0,
-                      
                       'imageUrl': dialogImageUrl,
                       'newImageBytes': dialogImageBytes,
                       'newImageExt': dialogImageExt,
                     };
-
                     setState(() {
-                      if (isEditing) {
-                        _variationsUIList[index] = newData;
-                      } else {
-                        _variationsUIList.add(newData);
-                      }
+                      if (isEditing) { _variationsUIList[index] = newData; } else { _variationsUIList.add(newData); }
                       _updateTotalStock();
                     });
                     Navigator.pop(ctx);
@@ -330,7 +366,6 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
     setState(() { _isLoading = true; });
 
     try {
-      // 1. Upload Imagem Principal
       String mainImageUrl = _currentImageUrl ?? '';
       if (_newImageBytes != null && _newImageExtension != null) {
         setState(() => _uploadProgress = 0.1);
@@ -343,13 +378,10 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
         if (res != null) mainImageUrl = res.downloadUrl;
       }
 
-      // 2. Processar Variações
       List<ComponentVariation> finalVariations = [];
-      
       for (var i = 0; i < _variationsUIList.length; i++) {
         var vData = _variationsUIList[i];
         String? varImgUrl = vData['imageUrl'];
-        
         if (vData['newImageBytes'] != null) {
            final res = await _storageService.uploadImage(
              fileBytes: vData['newImageBytes'],
@@ -359,17 +391,13 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
            );
            if (res != null) varImgUrl = res.downloadUrl;
         }
-
         finalVariations.add(ComponentVariation(
           id: vData['id'] ?? const Uuid().v4(),
           name: vData['name'],
           stock: vData['stock'],
-          
-          // SALVA OS PREÇOS INDIVIDUAIS
           supplierPrice: (vData['supplierPrice'] ?? 0.0),
           costPrice: (vData['costPrice'] ?? 0.0),
           price: (vData['price'] ?? 0.0),
-          
           imageUrl: varImgUrl,
         ));
       }
@@ -383,9 +411,9 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
         name: _nameController.text,
         description: _descController.text,
         category: _selectedCategoryKey ?? AppConstants.catBlank,
-        supplierPrice: double.tryParse(_supplierPriceController.text) ?? 0.0,
-        costPrice: double.tryParse(_costPriceController.text) ?? 0.0,
-        price: double.tryParse(_priceController.text) ?? 0.0,
+        supplierPrice: double.tryParse(_supplierPriceController.text.replaceAll(',', '.')) ?? 0.0,
+        costPrice: double.tryParse(_costPriceController.text.replaceAll(',', '.')) ?? 0.0,
+        price: double.tryParse(_priceController.text.replaceAll(',', '.')) ?? 0.0,
         stock: finalStock,
         imageUrl: mainImageUrl,
         attributes: widget.component?.attributes ?? {},
@@ -449,6 +477,7 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
                 TextFormField(controller: _descController, decoration: const InputDecoration(labelText: 'Descrição', border: OutlineInputBorder()), maxLines: 2),
     
                 const SizedBox(height: 24),
+                // --- SEÇÃO DE PREÇOS (MODIFICADA) ---
                 const Text("Preço Base (Padrão)", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                 const SizedBox(height: 16),
                 Row(
@@ -460,8 +489,86 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
                     Expanded(child: TextFormField(controller: _priceController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Venda (R\$)', border: OutlineInputBorder(), filled: true))),
                   ],
                 ),
+
+                // --- NOVO BLOCO: VALIDADOR DE PREÇO ---
+                const SizedBox(height: 16),
+                if (_supplierLinkController.text.isNotEmpty) 
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.indigo[50],
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.indigo[100]!)
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text("VALIDAÇÃO COM FORNECEDOR", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.indigo, fontSize: 12)),
+                            if (_isCheckingPrice) 
+                              const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                            else
+                              InkWell(
+                                onTap: _checkSupplierPrice,
+                                child: const Row(
+                                  children: [
+                                    Icon(Icons.refresh, size: 16, color: Colors.indigo),
+                                    SizedBox(width: 4),
+                                    Text("Verificar Agora", style: TextStyle(color: Colors.indigo, fontWeight: FontWeight.bold))
+                                  ],
+                                ),
+                              )
+                          ],
+                        ),
+                        
+                        if (_scrapeMessage != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8.0),
+                            child: Text(_scrapeMessage!, style: const TextStyle(color: Colors.red, fontSize: 12)),
+                          ),
+
+                        if (_scrapedPrice != null) ...[
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text("Valor no Site:", style: TextStyle(fontSize: 12, color: Colors.grey)),
+                                    Text(FinancialHelper.formatCurrency(_scrapedPrice!), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.black87)),
+                                  ],
+                                ),
+                              ),
+                              // Comparativo
+                              Expanded(
+                                child: _buildPriceComparisonBadge(
+                                  current: double.tryParse(_supplierPriceController.text.replaceAll(',', '.')) ?? 0.0,
+                                  scraped: _scrapedPrice!
+                                ),
+                              ),
+                              ElevatedButton(
+                                onPressed: _applyScrapedPrice,
+                                style: ElevatedButton.styleFrom(backgroundColor: Colors.indigo, foregroundColor: Colors.white, visualDensity: VisualDensity.compact),
+                                child: const Text("Aplicar"),
+                              )
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          const Text(
+                            "Ao aplicar, Custo e Venda serão recalculados automaticamente.",
+                            style: TextStyle(fontSize: 10, color: Colors.indigo, fontStyle: FontStyle.italic),
+                          ),
+                        ]
+                      ],
+                    ),
+                  ),
+                // ----------------------------------------
     
                 const Divider(height: 40),
+                // Variações e Estoque
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -496,8 +603,7 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
                                 : (item['imageUrl'] != null ? Image.network(item['imageUrl'], fit: BoxFit.cover) : const Icon(Icons.image)),
                           ),
                           title: Text(item['name'], style: const TextStyle(fontWeight: FontWeight.bold)),
-                          // Mostra resumo do preço
-                          subtitle: Text("Qtd: ${item['stock']} | Venda: R\$ ${item['price'].toStringAsFixed(2)}"),
+                          subtitle: Text("Qtd: ${item['stock']} | Venda: R\$ ${(item['price'] as double).toStringAsFixed(2)}"),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
@@ -522,7 +628,8 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
                   decoration: const InputDecoration(
                     labelText: 'Link do Fornecedor', 
                     border: OutlineInputBorder(), 
-                    suffixIcon: Icon(Icons.link)
+                    suffixIcon: Icon(Icons.link),
+                    helperText: "Necessário para a validação automática de preços."
                   ),
                 ),
                 if (_supplierLinkController.text.isNotEmpty)
@@ -563,5 +670,32 @@ class _ComponentFormScreenState extends State<ComponentFormScreen> {
           : (_currentImageUrl != null ? Image.network(_currentImageUrl!, fit: BoxFit.cover) : const Center(child: Icon(Icons.add_photo_alternate, size: 50, color: Colors.grey))),
        ),
      );
+  }
+
+  Widget _buildPriceComparisonBadge({required double current, required double scraped}) {
+    Color color;
+    IconData icon;
+    String text;
+
+    if (scraped > current) {
+      color = Colors.red;
+      icon = Icons.trending_up;
+      text = "Aumentou";
+    } else if (scraped < current) {
+      color = Colors.green;
+      icon = Icons.trending_down;
+      text = "Baixou";
+    } else {
+      color = Colors.blue;
+      icon = Icons.check;
+      text = "Igual";
+    }
+
+    return Column(
+      children: [
+        Icon(icon, color: color),
+        Text(text, style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 10)),
+      ],
+    );
   }
 }

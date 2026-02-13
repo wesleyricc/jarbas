@@ -5,13 +5,16 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import '../models/quote_model.dart';
 import '../models/customer_model.dart'; 
+import '../models/component_model.dart'; // Import para buscar componente completo
 import '../services/customer_service.dart'; 
 import '../services/storage_service.dart';
 import '../services/whatsapp_service.dart';
 import '../services/quote_service.dart';
+import '../services/component_service.dart'; // Import ComponentService
 import '../utils/app_constants.dart';
 import '../services/pdf_service.dart';
-import 'admin_customers_screen.dart'; // Import necessário para o CustomerFormDialog
+import 'admin_customers_screen.dart';
+import 'component_form_screen.dart'; // Import da tela de edição
 
 class AdminQuoteDetailScreen extends StatefulWidget {
   final Quote quote;
@@ -40,6 +43,7 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
   final StorageService _storageService = StorageService();
   final QuoteService _quoteService = QuoteService();
   final CustomerService _customerService = CustomerService();
+  final ComponentService _componentService = ComponentService(); // Serviço para buscar componente
 
   final Map<String, String> _sectionCategoryMap = {
     'Blanks': AppConstants.catBlank,
@@ -81,6 +85,26 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
   void dispose() {
     _customizationController.dispose();
     super.dispose();
+  }
+
+  // --- NAVEGAÇÃO PARA EDIÇÃO DO COMPONENTE ---
+  Future<void> _editComponent(String componentId) async {
+    if (componentId.isEmpty) return;
+
+    // Busca o componente completo atualizado do banco
+    Component? comp = await _componentService.getComponentById(componentId);
+    
+    if (comp != null && mounted) {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => ComponentFormScreen(component: comp)),
+      );
+      // Ao voltar, poderíamos recarregar os custos, mas isso alteraria o orçamento
+      // sem consentimento. Então apenas recarregamos dados que "faltam" se houver.
+      _fetchMissingData();
+    } else {
+      if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Componente não encontrado (pode ter sido excluído).")));
+    }
   }
 
   Future<void> _fetchSettings() async {
@@ -209,52 +233,7 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
   }
 
   Future<void> _processStockTransaction({required bool isDeducting}) async {
-    final db = FirebaseFirestore.instance;
-    int multiplier = isDeducting ? -1 : 1;
-
-    Future<void> updateList(List<Map<String, dynamic>> items) async {
-      for (var item in items) {
-        String? componentId = item['id'];
-        int qty = (item['quantity'] ?? 1) as int;
-        String? variationName = item['variation'];
-
-        if (componentId == null || componentId.isEmpty) continue;
-
-        try {
-          await db.runTransaction((transaction) async {
-            DocumentReference docRef = db.collection(AppConstants.colComponents).doc(componentId);
-            DocumentSnapshot snapshot = await transaction.get(docRef);
-
-            if (!snapshot.exists) return;
-
-            Map<String, dynamic> data = snapshot.data() as Map<String, dynamic>;
-
-            if (variationName != null && variationName.isNotEmpty) {
-              List<dynamic> variations = List.from(data['variations'] ?? []);
-              int index = variations.indexWhere((v) => v['name'] == variationName);
-
-              if (index != -1) {
-                int currentStock = (variations[index]['stock'] ?? 0) as int;
-                variations[index]['stock'] = currentStock + (qty * multiplier);
-                transaction.update(docRef, {'variations': variations});
-              }
-            } 
-            else {
-              int currentStock = (data['stock'] ?? 0) as int;
-              transaction.update(docRef, {'stock': currentStock + (qty * multiplier)});
-            }
-          });
-        } catch (e) {
-          print("Erro ao atualizar estoque do item ${item['name']}: $e");
-        }
-      }
-    }
-
-    await updateList(_localQuote.blanksList);
-    await updateList(_localQuote.cabosList);
-    await updateList(_localQuote.reelSeatsList);
-    await updateList(_localQuote.passadoresList);
-    await updateList(_localQuote.acessoriosList);
+    await _quoteService.updateStockFromQuote(_localQuote, isDeducting: isDeducting);
   }
 
   // --- LÓGICA DE DUPLICAR ORÇAMENTO ---
@@ -1062,19 +1041,11 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
     final messenger = ScaffoldMessenger.of(context);
     if (!silent) setState(() => _isLoading = true);
     
-    _localQuote = Quote(
-      id: widget.quoteId, userId: _localQuote.userId, customerId: _localQuote.customerId, status: _localQuote.status, createdAt: _localQuote.createdAt,
-      clientName: _localQuote.clientName, clientPhone: _localQuote.clientPhone, clientCity: _localQuote.clientCity, clientState: _localQuote.clientState,
-      blanksList: _localQuote.blanksList, cabosList: _localQuote.cabosList, reelSeatsList: _localQuote.reelSeatsList, passadoresList: _localQuote.passadoresList, acessoriosList: _localQuote.acessoriosList,
-      extraLaborCost: _localQuote.extraLaborCost, totalPrice: _localQuote.totalPrice, 
-      customizationText: _customizationController.text,
-      finishedImages: _localQuote.finishedImages,
-      generalDiscount: _localQuote.generalDiscount,
-      generalDiscountType: _localQuote.generalDiscountType
-    );
+    // Garante que o total está sincronizado antes de salvar
+    _recalculateTotal();
 
     try {
-      await FirebaseFirestore.instance.collection(AppConstants.colQuotes).doc(widget.quoteId).update(_localQuote.toMap());
+      await _quoteService.updateQuote(widget.quoteId, _localQuote.toMap());
       if (!mounted) return;
       if (!silent) messenger.showSnackBar(SnackBar(content: Text(customMessage ?? 'Orçamento salvo com sucesso!'), backgroundColor: Colors.green));
     } catch (e) {
@@ -1412,7 +1383,21 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(item['name'] ?? 'Item', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.black87)),
+                              // LINHA DO NOME COM BOTÃO DE EDIÇÃO
+                              Row(
+                                children: [
+                                  Expanded(child: Text(item['name'] ?? 'Item', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.black87))),
+                                  // BOTÃO DE EDIÇÃO RÁPIDA
+                                  IconButton(
+                                    icon: const Icon(Icons.edit_note, size: 20, color: Colors.blueGrey),
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                    tooltip: "Editar Cadastro do Componente",
+                                    onPressed: () => _editComponent(item['id']),
+                                  ),
+                                ],
+                              ),
+
                               if (item['variation'] != null)
                                 Text("${item['variation']}", style: TextStyle(color: Colors.grey[600], fontSize: 13)),
                               const SizedBox(height: 4),
@@ -1571,7 +1556,7 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
                             const SizedBox(width: 8),
                             Expanded(child: Text(_localQuote.clientName.toUpperCase(), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87))),
                             
-                            // --- MENU DE AÇÕES DO CLIENTE (ATUALIZADO) ---
+                            // --- MENU DE AÇÕES DO CLIENTE ---
                             PopupMenuButton<String>(
                               icon: const Icon(Icons.edit, size: 20, color: Colors.blueGrey),
                               tooltip: 'Opções do Cliente',
