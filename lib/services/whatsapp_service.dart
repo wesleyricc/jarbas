@@ -1,12 +1,13 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart'; // Necessário para kIsWeb
 import 'package:url_launcher/url_launcher.dart';
+import 'package:intl/intl.dart'; // Necessário para formatar datas e moeda
 import '../providers/rod_builder_provider.dart';
 import '../models/quote_model.dart'; 
 
 class WhatsAppService {
   
-  // ADICIONADO: Método público genérico para abrir conversa
+  // Método público genérico para abrir conversa
   Future<void> openWhatsApp({required String phone, required String message}) async {
     await _launchWhatsApp(message, targetPhone: phone);
   }
@@ -27,7 +28,7 @@ class WhatsAppService {
     return "5511999999999"; 
   }
 
-  // --- Método 1: Novo Orçamento ---
+  // --- Método 1: Novo Orçamento (Cliente envia para Oficina) ---
   static Future<void> sendNewQuoteRequest({required RodBuilderProvider provider}) async {
     final buffer = StringBuffer();
     buffer.writeln("*NOVO ORÇAMENTO - APP*");
@@ -91,7 +92,7 @@ class WhatsAppService {
     await _launchWhatsApp(buffer.toString(), targetPhone: adminPhone);
   }
 
-  // --- Método 3: Admin Envia para Cliente ---
+  // --- Método 3: Envio do Orçamento Fechado (Oficina envia para Cliente) ---
   static Future<void> sendQuoteToClient(Quote quote) async {
     final buffer = StringBuffer();
     buffer.writeln("*Olá ${quote.clientName}, aqui está o resumo do seu orçamento:*");
@@ -131,6 +132,74 @@ class WhatsAppService {
     await _launchWhatsApp(buffer.toString(), targetPhone: quote.clientPhone);
   }
 
+  // --- Método 4: Atualização e Resumo de Andamento (Painel Kanban / Financeiro) ---
+  static Future<void> sendOrderStatusToClient(Quote quote) async {
+    final buffer = StringBuffer();
+    final currencyFormat = NumberFormat.simpleCurrency(locale: 'pt_BR');
+    
+    buffer.writeln("*ATUALIZAÇÃO DO SEU PEDIDO* 🎣");
+    buffer.writeln("Olá ${quote.clientName}, aqui está o resumo atualizado do seu projeto na Jarbas Custom Rods:");
+    buffer.writeln("-------------------------");
+    
+    buffer.writeln("*📌 Status Atual:* ${quote.status.toUpperCase()}");
+    
+    if (quote.deliveryDate != null) {
+      String dateStr = DateFormat('dd/MM/yyyy').format(quote.deliveryDate!.toDate());
+      buffer.writeln("*📅 Prazo Estimado:* $dateStr");
+    } else {
+      buffer.writeln("*📅 Prazo Estimado:* A definir");
+    }
+    buffer.writeln("-------------------------");
+    
+    buffer.writeln("*📋 ITENS DO SEU PEDIDO:*");
+    void writeMapList(List<Map<String, dynamic>> items) {
+      for (var item in items) {
+        String name = item['name'] ?? 'Item';
+        int qty = item['quantity'] ?? 1;
+        String variation = item['variation']?.toString() ?? '';
+        String varText = (variation.isNotEmpty && !name.contains(variation)) ? " [$variation]" : "";
+        buffer.writeln(" - ${qty}x $name$varText");
+      }
+    }
+
+    writeMapList(quote.blanksList);
+    writeMapList(quote.cabosList);
+    writeMapList(quote.reelSeatsList);
+    writeMapList(quote.passadoresList);
+    writeMapList(quote.acessoriosList);
+
+    if (quote.customizationText != null && quote.customizationText!.isNotEmpty) {
+      buffer.writeln("");
+      buffer.writeln("*🛠️ Notas de Personalização:* ${quote.customizationText}");
+    }
+    buffer.writeln("-------------------------");
+
+    // DADOS FINANCEIROS
+    double balance = quote.totalPrice - quote.amountPaid;
+    if (balance < 0) balance = 0.0;
+
+    buffer.writeln("*💰 RESUMO FINANCEIRO:*");
+    buffer.writeln("*Valor Total:* ${currencyFormat.format(quote.totalPrice)}");
+    buffer.writeln("*Valor Pago:* ${currencyFormat.format(quote.amountPaid)}");
+    buffer.writeln("*Saldo em Aberto:* ${currencyFormat.format(balance)}");
+    
+    if (quote.paymentHistory.isNotEmpty) {
+      buffer.writeln("");
+      buffer.writeln("*Histórico de Pagamentos:*");
+      for (var pay in quote.paymentHistory) {
+         final date = (pay['date'] as Timestamp).toDate();
+         final amount = (pay['amount'] as num).toDouble();
+         final method = pay['method'] as String;
+         buffer.writeln("✅ ${DateFormat('dd/MM/yy').format(date)} - $method: ${currencyFormat.format(amount)}");
+      }
+    }
+
+    buffer.writeln("-------------------------");
+    buffer.writeln("Qualquer dúvida, estamos à disposição!");
+
+    await _launchWhatsApp(buffer.toString(), targetPhone: quote.clientPhone);
+  }
+
   // --- Helper Privado (UNIVERSAL: IOS, ANDROID E WEB) ---
   static Future<void> _launchWhatsApp(String message, {required String targetPhone}) async {
     String phone = targetPhone.replaceAll(RegExp(r'[^\d]+'), '');
@@ -138,10 +207,25 @@ class WhatsAppService {
       phone = '55$phone';
     }
 
-    final Uri appUrl = Uri.parse("whatsapp://send?phone=$phone&text=${Uri.encodeComponent(message)}");
-    final Uri webUrl = Uri.parse("https://wa.me/$phone?text=${Uri.encodeComponent(message)}");
+    // CORREÇÃO: Utilizando a classe Uri com queryParameters para garantir a codificação UTF-8 dos emojis
+    final Uri appUrl = Uri(
+      scheme: 'whatsapp',
+      host: 'send',
+      queryParameters: {
+        'phone': phone,
+        'text': message,
+      }
+    );
+    
+    final Uri webUrl = Uri.https(
+      'api.whatsapp.com',
+      '/send',
+      {
+        'phone': phone,
+        'text': message,
+      }
+    );
 
-    // LÓGICA ESPECÍFICA PARA WEB (PWA)
     if (kIsWeb) {
       if (await canLaunchUrl(webUrl)) {
         await launchUrl(webUrl, mode: LaunchMode.externalApplication);
@@ -151,13 +235,10 @@ class WhatsAppService {
       return;
     }
 
-    // LÓGICA PARA NATIVO (ANDROID / IOS)
     try {
-      // 1. Tenta abrir o App Nativo
       if (await canLaunchUrl(appUrl)) {
         await launchUrl(appUrl, mode: LaunchMode.externalApplication);
       } 
-      // 2. Fallback para Web Link
       else if (await canLaunchUrl(webUrl)) {
         await launchUrl(webUrl, mode: LaunchMode.externalApplication);
       } else {

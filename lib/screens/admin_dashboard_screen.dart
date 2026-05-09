@@ -14,13 +14,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   final NumberFormat _currencyFormat = NumberFormat.simpleCurrency(locale: 'pt_BR');
   bool _isLoading = true;
 
-  // Filtro de Datas
   DateTimeRange _dateRange = DateTimeRange(
     start: DateTime.now().subtract(const Duration(days: 30)),
     end: DateTime.now(),
   );
 
-  // Variáveis de Dados
+  // Variáveis Financeiras
   double _totalRevenue = 0.0;
   double _totalMaterialCost = 0.0;
   double _totalLaborRevenue = 0.0;
@@ -28,9 +27,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   Map<String, int> _topItems = {};
   List<Map<String, dynamic>> _monthlyStats = [];
 
+  // Variáveis de Produção (KPIs Passo 2)
+  int _filaCount = 0;
+  int _producaoCount = 0;
+  int _aguardandoCount = 0;
+  int _delayedCount = 0;
+
   final Set<String> _salesStatuses = {
     AppConstants.statusAprovado,
     AppConstants.statusProducao,
+    AppConstants.statusAguardandoEnvio,
+    AppConstants.statusEnviado,
     AppConstants.statusConcluido,
   };
 
@@ -48,7 +55,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   Future<void> _selectDateRange() async {
     final DateTimeRange? newRange = await showDateRangePicker(
       context: context,
-      locale: const Locale("pt", "BR"), // <--- ADICIONE ESTA LINHA
+      locale: const Locale("pt", "BR"),
       firstDate: DateTime(2023),
       lastDate: DateTime(2030),
       initialDateRange: _dateRange,
@@ -77,7 +84,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     try {
       final db = FirebaseFirestore.instance;
       
-      final snapshot = await db.collection(AppConstants.colQuotes)
+      // 1. BUSCA DE DADOS FINANCEIROS (FILTRADOS POR DATA)
+      final finSnapshot = await db.collection(AppConstants.colQuotes)
           .where('createdAt', isGreaterThanOrEqualTo: Timestamp.fromDate(_dateRange.start))
           .where('createdAt', isLessThanOrEqualTo: Timestamp.fromDate(_dateRange.end))
           .get();
@@ -89,7 +97,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       Map<String, int> itemsCounter = {};
       Map<String, Map<String, double>> monthsMap = {};
 
-      for (var doc in snapshot.docs) {
+      for (var doc in finSnapshot.docs) {
         final data = doc.data();
         final status = data['status'] ?? '';
 
@@ -152,6 +160,39 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         });
       });
 
+      // 2. BUSCA DE DADOS DE PRODUÇÃO (GLOBAIS DA OFICINA, SEM FILTRO DE DATA)
+      final prodSnapshot = await db.collection(AppConstants.colQuotes)
+          .where('status', whereIn: [
+            AppConstants.statusAprovado, 
+            AppConstants.statusProducao, 
+            AppConstants.statusAguardandoEnvio
+          ]).get();
+
+      int fila = 0;
+      int prod = 0;
+      int aguardando = 0;
+      int delayed = 0;
+
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+
+      for (var doc in prodSnapshot.docs) {
+        final data = doc.data();
+        final status = data['status'];
+        
+        if (status == AppConstants.statusAprovado) fila++;
+        if (status == AppConstants.statusProducao) prod++;
+        if (status == AppConstants.statusAguardandoEnvio) aguardando++;
+
+        if (data['deliveryDate'] != null) {
+          final delDate = (data['deliveryDate'] as Timestamp).toDate();
+          final delDateOnly = DateTime(delDate.year, delDate.month, delDate.day);
+          if (delDateOnly.isBefore(today)) {
+            delayed++;
+          }
+        }
+      }
+
       if (mounted) {
         setState(() {
           _totalRevenue = revenue;
@@ -160,6 +201,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           _salesCount = count;
           _topItems = top5;
           _monthlyStats = monthlyStatsList;
+
+          _filaCount = fila;
+          _producaoCount = prod;
+          _aguardandoCount = aguardando;
+          _delayedCount = delayed;
+
           _isLoading = false;
         });
       }
@@ -171,6 +218,67 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   // --- WIDGETS ---
+
+  Widget _buildProductionOverviewCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.blueGrey.shade100),
+        boxShadow: [BoxShadow(color: Colors.blueGrey.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))]
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.precision_manufacturing, color: Colors.blueGrey[800], size: 20),
+              const SizedBox(width: 8),
+              Text("OPERAÇÃO ATUAL", style: TextStyle(color: Colors.blueGrey[800], fontSize: 14, fontWeight: FontWeight.w900, letterSpacing: 0.5)),
+            ],
+          ),
+          const Divider(height: 24),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _buildProductionMiniKpi("Fila de Espera", _filaCount, Colors.blue),
+              Container(width: 1, height: 30, color: Colors.grey[300]),
+              _buildProductionMiniKpi("Em Produção", _producaoCount, Colors.purple),
+              Container(width: 1, height: 30, color: Colors.grey[300]),
+              _buildProductionMiniKpi("Aguard. Envio", _aguardandoCount, Colors.indigo),
+            ],
+          ),
+          if (_delayedCount > 0) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(color: Colors.red[50], borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.red[200]!)),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.warning_amber_rounded, color: Colors.red, size: 20),
+                  const SizedBox(width: 8),
+                  Text("Atenção: Você possui $_delayedCount pedido(s) atrasado(s)!", style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 13)),
+                ],
+              ),
+            )
+          ]
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProductionMiniKpi(String label, int count, Color color) {
+    return Column(
+      children: [
+        Text(count.toString(), style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: color)),
+        const SizedBox(height: 4),
+        Text(label, style: TextStyle(fontSize: 11, color: Colors.grey[600], fontWeight: FontWeight.bold)),
+      ],
+    );
+  }
 
   Widget _buildKPICard(String title, double value, IconData icon, Color color, {bool isCurrency = true, String? subtitle}) {
     return Expanded(
@@ -401,7 +509,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
     return Scaffold(
       backgroundColor: const Color(0xFFF2F4F8),
-      // SEM APP BAR
       body: _isLoading 
         ? const Center(child: CircularProgressIndicator())
         : SafeArea(
@@ -413,7 +520,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // CABEÇALHO DO FILTRO (CUSTOMIZADO)
+                    // --- O NOVO CARTÃO DE PRODUÇÃO ENTRA AQUI (NO TOPO) ---
+                    _buildProductionOverviewCard(),
+                    const SizedBox(height: 24),
+
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -427,7 +537,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                             ),
                           ],
                         ),
-                        // ÍCONE DE CALENDÁRIO AO LADO DA DATA
                         IconButton(
                           icon: const Icon(Icons.edit_calendar, color: Colors.blue),
                           onPressed: _selectDateRange,
@@ -435,13 +544,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 16),
 
-                    // Card Principal de Lucro
                     _buildProfitCard(),
                     const SizedBox(height: 16),
 
-                    // KPIs Secundários
                     Row(
                       children: [
                         _buildKPICard("Faturamento", _totalRevenue, Icons.attach_money, Colors.blue),
@@ -459,15 +566,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     ),
 
                     const SizedBox(height: 24),
-                    
-                    // Gráfico Mensal
                     _buildMonthlyChart(),
-
                     const SizedBox(height: 24),
-
-                    // Lista Top Itens
                     _buildTopItemsList(),
-                    
                     const SizedBox(height: 40),
                   ],
                 ),

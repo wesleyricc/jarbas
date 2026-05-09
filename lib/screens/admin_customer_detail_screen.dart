@@ -25,9 +25,11 @@ class _AdminCustomerDetailScreenState extends State<AdminCustomerDetailScreen> {
 
   final Map<String, Color> _statusColors = {
     AppConstants.statusPendente: Colors.orange,
-    AppConstants.statusEnviado: Colors.cyan,
+    AppConstants.statusOrcado: Colors.amber, // NOVO STATUS AQUI
     AppConstants.statusAprovado: Colors.blue,
     AppConstants.statusProducao: Colors.purple,
+    AppConstants.statusAguardandoEnvio: Colors.indigo,
+    AppConstants.statusEnviado: Colors.teal,
     AppConstants.statusConcluido: Colors.green,
     AppConstants.statusCancelado: Colors.red,
     AppConstants.statusRascunho: Colors.grey,
@@ -223,7 +225,7 @@ class _AdminCustomerDetailScreenState extends State<AdminCustomerDetailScreen> {
     );
   }
 
-  // --- CARD DO ORÇAMENTO (COM RESUMO DETALHADO) ---
+  // --- CARD DO ORÇAMENTO ---
   Widget _buildQuoteCard(BuildContext context, Quote quote) {
     Color statusColor = _statusColors[quote.status] ?? Colors.grey;
     final dateStr = DateFormat('dd/MM/yyyy').format(quote.createdAt.toDate());
@@ -253,7 +255,6 @@ class _AdminCustomerDetailScreenState extends State<AdminCustomerDetailScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Linha Superior: Ícone, ID, Data e Status
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -285,7 +286,6 @@ class _AdminCustomerDetailScreenState extends State<AdminCustomerDetailScreen> {
                       ],
                     ),
                   ),
-                  // Status
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                     decoration: BoxDecoration(
@@ -303,14 +303,12 @@ class _AdminCustomerDetailScreenState extends State<AdminCustomerDetailScreen> {
               
               const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Divider(height: 1, thickness: 0.5)),
               
-              // Resumo Detalhado dos Itens (IGUAL ADMIN_QUOTES_SCREEN)
               const Text("Resumo do Pedido:", style: TextStyle(fontSize: 11, color: Colors.grey)),
               const SizedBox(height: 4),
               _buildQuoteSummary(quote),
               
               const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Divider(height: 1, thickness: 0.5)),
               
-              // Valor Total
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
@@ -499,11 +497,13 @@ class _AdminCustomerDetailScreenState extends State<AdminCustomerDetailScreen> {
     int countClosed = 0;
     DateTime? lastDate;
 
+    // AQUI TAMBÉM ATUALIZAMOS OS STATUS VÁLIDOS
     const closedStatuses = [
       AppConstants.statusAprovado, 
       AppConstants.statusProducao, 
-      AppConstants.statusConcluido,
-      AppConstants.statusEnviado
+      AppConstants.statusAguardandoEnvio,
+      AppConstants.statusEnviado,
+      AppConstants.statusConcluido
     ];
 
     for (var quote in quotes) {

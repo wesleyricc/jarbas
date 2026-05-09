@@ -9,6 +9,7 @@ import 'rod_builder_screen.dart';
 // Import das Telas Admin
 import 'admin_dashboard_screen.dart';
 import 'admin_quotes_screen.dart';
+import 'admin_production_board_screen.dart'; // IMPORT DA NOVA TELA KANBAN
 import 'admin_components_screen.dart';
 import 'admin_kits_screen.dart';
 import 'admin_low_stock_screen.dart';
@@ -42,7 +43,7 @@ class HomeScreen extends StatelessWidget {
   }
 }
 
-// --- ESTRUTURA DO ADMIN (Mantida igual) ---
+// --- ESTRUTURA DO ADMIN ---
 class _AdminHomeStructure extends StatefulWidget {
   final AuthService authService;
   const _AdminHomeStructure({required this.authService});
@@ -55,7 +56,7 @@ class _AdminHomeStructureState extends State<_AdminHomeStructure> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 5, 
+      length: 6, // ALTERADO DE 5 PARA 6 ABAS
       child: Scaffold(
         backgroundColor: Colors.grey[50],
         appBar: AppBar(
@@ -94,6 +95,7 @@ class _AdminHomeStructureState extends State<_AdminHomeStructure> {
             tabs: [
               Tab(icon: Icon(Icons.dashboard), text: "Dashboard"),
               Tab(icon: Icon(Icons.list_alt), text: "Orçamentos"),
+              Tab(icon: Icon(Icons.view_kanban), text: "Produção"), // NOVA ABA DE PRODUÇÃO
               Tab(icon: Icon(Icons.inventory_2), text: "Componentes"),
               Tab(icon: Icon(Icons.view_quilt), text: "Kits"),
               Tab(icon: Icon(Icons.person), text: "Clientes"),
@@ -104,6 +106,7 @@ class _AdminHomeStructureState extends State<_AdminHomeStructure> {
           children: [
             AdminDashboardScreen(),
             AdminQuotesScreen(),
+            AdminProductionBoardScreen(), // NOVA TELA KANBAN CONECTADA AQUI
             AdminComponentsScreen(),
             AdminKitsScreen(),
             AdminCustomersScreen(),
@@ -114,7 +117,7 @@ class _AdminHomeStructureState extends State<_AdminHomeStructure> {
   }
 }
 
-// --- ESTRUTURA DO CLIENTE (Atualizada com Logo) ---
+// --- ESTRUTURA DO CLIENTE ---
 class _ClientHomeStructure extends StatelessWidget {
   final AuthService authService;
   const _ClientHomeStructure({required this.authService});
@@ -145,13 +148,12 @@ class _ClientHomeStructure extends StatelessWidget {
             // --- LOGO JARBAS CUSTOM RODS ---
             Center(
               child: Container(
-                height: 120, // Altura ajustada para destaque
+                height: 120, 
                 margin: const EdgeInsets.only(bottom: 24),
                 child: Image.asset(
                   'assets/logo_jarbas.png',
                   fit: BoxFit.contain,
                   errorBuilder: (context, error, stackTrace) {
-                    // Fallback caso a imagem não carregue
                     return Icon(
                       Icons.phishing, 
                       size: 80, 
@@ -166,13 +168,13 @@ class _ClientHomeStructure extends StatelessWidget {
             const Text(
               "Bem-vindo!", 
               style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.blueGrey),
-              textAlign: TextAlign.center, // Centraliza o texto
+              textAlign: TextAlign.center, 
             ),
             const SizedBox(height: 8),
             const Text(
               "Crie sua vara personalizada ou escolha um de nossos modelos prontos.", 
               style: TextStyle(fontSize: 16, color: Colors.grey),
-              textAlign: TextAlign.center, // Centraliza o texto
+              textAlign: TextAlign.center, 
             ),
             const SizedBox(height: 40),
 

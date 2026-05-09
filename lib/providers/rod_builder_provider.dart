@@ -22,7 +22,7 @@ class RodBuilderProvider extends ChangeNotifier {
   final QuoteService _quoteService = QuoteService(); 
 
   // Dados do Cliente
-  String? _selectedCustomerId; // NOVO: ID do cliente selecionado
+  String? _selectedCustomerId; 
   String clientName = '';
   String clientPhone = '';
   String clientCity = '';
@@ -54,7 +54,6 @@ class RodBuilderProvider extends ChangeNotifier {
   double get totalPrice => _totalPrice;
   double get customizationPrice => customizationText.isNotEmpty ? _globalCustomizationPrice : 0.0;
 
-  // --- MÉTODOS PÚBLICOS DE IMAGEM E PREÇO ---
 
   String getItemImage(RodItem item) {
     String baseImage = item.component.imageUrl;
@@ -181,7 +180,6 @@ class RodBuilderProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Atualizado para aceitar customerId opcional
   void updateClientInfo({
     required String name, 
     required String phone, 
@@ -333,11 +331,14 @@ class RodBuilderProvider extends ChangeNotifier {
       }).toList();
     }
 
+    final timestamp = Timestamp.now(); 
+
     final quote = Quote(
       userId: userId,
-      customerId: _selectedCustomerId, // Salva o ID do cliente se houver
+      customerId: _selectedCustomerId,
       status: status,
-      createdAt: Timestamp.now(),
+      createdAt: timestamp,
+      statusUpdatedAt: timestamp, 
       clientName: clientName,
       clientPhone: clientPhone,
       clientCity: clientCity,
@@ -350,6 +351,10 @@ class RodBuilderProvider extends ChangeNotifier {
       extraLaborCost: _extraLaborCost,
       totalPrice: _totalPrice,
       customizationText: customizationText,
+      // INICIA FINANCEIRO ZERADO
+      amountPaid: 0.0,
+      paymentStatus: AppConstants.paymentPendente,
+      paymentHistory: const [], 
     );
 
     try {
@@ -366,7 +371,7 @@ class RodBuilderProvider extends ChangeNotifier {
     clientPhone = quote.clientPhone;
     clientCity = quote.clientCity;
     clientState = quote.clientState;
-    _selectedCustomerId = quote.customerId; // Restaura o ID do cliente
+    _selectedCustomerId = quote.customerId; 
 
     customizationText = quote.customizationText ?? '';
     _extraLaborCost = quote.extraLaborCost;

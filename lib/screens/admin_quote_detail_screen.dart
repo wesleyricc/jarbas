@@ -5,16 +5,16 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import '../models/quote_model.dart';
 import '../models/customer_model.dart'; 
-import '../models/component_model.dart'; // Import para buscar componente completo
+import '../models/component_model.dart'; 
 import '../services/customer_service.dart'; 
 import '../services/storage_service.dart';
 import '../services/whatsapp_service.dart';
 import '../services/quote_service.dart';
-import '../services/component_service.dart'; // Import ComponentService
+import '../services/component_service.dart'; 
 import '../utils/app_constants.dart';
 import '../services/pdf_service.dart';
 import 'admin_customers_screen.dart';
-import 'component_form_screen.dart'; // Import da tela de edição
+import 'component_form_screen.dart'; 
 
 class AdminQuoteDetailScreen extends StatefulWidget {
   final Quote quote;
@@ -37,13 +37,15 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
   bool _isUploadingImage = false;
   
   late TextEditingController _customizationController;
+  late TextEditingController _amountPaidController;
+
   double _globalCustomizationPrice = 0.0;
 
   final NumberFormat _currencyFormat = NumberFormat.simpleCurrency(locale: 'pt_BR');
   final StorageService _storageService = StorageService();
   final QuoteService _quoteService = QuoteService();
   final CustomerService _customerService = CustomerService();
-  final ComponentService _componentService = ComponentService(); // Serviço para buscar componente
+  final ComponentService _componentService = ComponentService(); 
 
   final Map<String, String> _sectionCategoryMap = {
     'Blanks': AppConstants.catBlank,
@@ -55,9 +57,11 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
 
   final Map<String, Color> _statusColors = {
     AppConstants.statusPendente: Colors.orange,
-    AppConstants.statusEnviado: Colors.cyan,
+    AppConstants.statusOrcado: Colors.amber, 
     AppConstants.statusAprovado: Colors.blue,
     AppConstants.statusProducao: Colors.purple,
+    AppConstants.statusAguardandoEnvio: Colors.indigo,
+    AppConstants.statusEnviado: Colors.teal,
     AppConstants.statusConcluido: Colors.green,
     AppConstants.statusCancelado: Colors.red,
     AppConstants.statusRascunho: Colors.grey,
@@ -66,6 +70,8 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
   final Set<String> _statusesThatDeductStock = {
     AppConstants.statusAprovado,
     AppConstants.statusProducao,
+    AppConstants.statusAguardandoEnvio,
+    AppConstants.statusEnviado,
     AppConstants.statusConcluido,
   };
 
@@ -74,6 +80,9 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
     super.initState();
     _localQuote = widget.quote;
     _customizationController = TextEditingController(text: _localQuote.customizationText);
+    _amountPaidController = TextEditingController(
+      text: _localQuote.amountPaid > 0 ? _localQuote.amountPaid.toStringAsFixed(2) : ''
+    );
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _fetchMissingData();
@@ -84,14 +93,13 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
   @override
   void dispose() {
     _customizationController.dispose();
+    _amountPaidController.dispose();
     super.dispose();
   }
 
-  // --- NAVEGAÇÃO PARA EDIÇÃO DO COMPONENTE ---
   Future<void> _editComponent(String componentId) async {
     if (componentId.isEmpty) return;
 
-    // Busca o componente completo atualizado do banco
     Component? comp = await _componentService.getComponentById(componentId);
     
     if (comp != null && mounted) {
@@ -99,8 +107,6 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
         context,
         MaterialPageRoute(builder: (context) => ComponentFormScreen(component: comp)),
       );
-      // Ao voltar, poderíamos recarregar os custos, mas isso alteraria o orçamento
-      // sem consentimento. Então apenas recarregamos dados que "faltam" se houver.
       _fetchMissingData();
     } else {
       if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Componente não encontrado (pode ter sido excluído).")));
@@ -219,7 +225,6 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
     if (mounted) setState(() => _isFetchingCosts = false);
   }
 
-  // --- GERENCIAMENTO DE ESTOQUE ---
   Future<void> _handleStockChange(String oldStatus, String newStatus) async {
     bool oldDeducts = _statusesThatDeductStock.contains(oldStatus);
     bool newDeducts = _statusesThatDeductStock.contains(newStatus);
@@ -236,7 +241,6 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
     await _quoteService.updateStockFromQuote(_localQuote, isDeducting: isDeducting);
   }
 
-  // --- LÓGICA DE DUPLICAR ORÇAMENTO ---
   void _showDuplicateDialog() {
     CustomerModel? selectedCustomer;
     bool updatePrices = false;
@@ -257,7 +261,6 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
                     const Text("Selecione o cliente para o novo orçamento:"),
                     const SizedBox(height: 16),
                     
-                    // Seletor de Cliente
                     if (selectedCustomer == null)
                        ElevatedButton.icon(
                         icon: const Icon(Icons.person_search),
@@ -268,7 +271,6 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
                           foregroundColor: Colors.white
                         ),
                         onPressed: () async {
-                          // Abre o seletor e espera o retorno
                           final result = await _pickCustomer(context);
                           if (result != null) {
                             setStateDialog(() => selectedCustomer = result);
@@ -322,13 +324,11 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
     );
   }
 
-  // --- SELETOR DE CLIENTES (COM BOTÃO DE ADICIONAR NOVO) ---
   Future<CustomerModel?> _pickCustomer(BuildContext context) async {
     CustomerModel? picked;
     await showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        // Título com botão de adicionar
         title: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -337,15 +337,12 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
               icon: const Icon(Icons.person_add, color: Colors.blue),
               tooltip: "Cadastrar Novo",
               onPressed: () async {
-                 // Abre o formulário de cadastro
                  await showDialog(
                    context: ctx,
                    builder: (c) => CustomerFormDialog(
                      onSave: (newCust) async {
                         await _customerService.saveCustomer(newCust);
-                        // Fecha o form
                         Navigator.pop(c);
-                        // Feedback
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(content: Text("Cliente cadastrado! Busque pelo nome na lista."))
                         );
@@ -427,7 +424,6 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
 
   Future<void> _duplicateQuote(CustomerModel customer, bool updatePrices) async {
     final messenger = ScaffoldMessenger.of(context);
-    
     if (mounted) setState(() => _isLoading = true);
     
     try {
@@ -465,7 +461,8 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
         userId: _localQuote.userId,
         status: AppConstants.statusRascunho,
         createdAt: Timestamp.now(),
-        customerId: customer.id, // VINCULA AO NOVO CLIENTE
+        statusUpdatedAt: Timestamp.now(), 
+        customerId: customer.id, 
         clientName: customer.name,
         clientPhone: customer.phone,
         clientCity: customer.city,
@@ -481,6 +478,9 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
         generalDiscountType: _localQuote.generalDiscountType,
         customizationText: _localQuote.customizationText,
         finishedImages: [],
+        amountPaid: 0.0, 
+        paymentStatus: AppConstants.paymentPendente,
+        paymentHistory: [],
       );
 
       await _quoteService.saveQuote(newQuote);
@@ -510,11 +510,9 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
         try {
           final doc = await db.collection(AppConstants.colComponents).doc(item['id']).get();
           if (doc.exists && doc.data() != null) {
-            final data = doc.data()!;
-            
+            final data = doc.data()!; 
             double basePrice = (data['price'] is num) ? (data['price'] as num).toDouble() : 0.0;
-            double baseCost = (data['costPrice'] is num) ? (data['costPrice'] as num).toDouble() : 0.0;
-            
+            double baseCost = (data['costPrice'] is num) ? (data['costPrice'] as num).toDouble() : 0.0;   
             double finalPrice = basePrice;
             double finalCost = baseCost;
 
@@ -522,11 +520,9 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
             if (variationName != null && variationName.toString().isNotEmpty) {
               List<dynamic> variations = data['variations'] ?? [];
               final variationMatch = variations.firstWhere((v) => v['name'] == variationName, orElse: () => null);
-
               if (variationMatch != null) {
                 double vPrice = (variationMatch['price'] is num) ? (variationMatch['price'] as num).toDouble() : 0.0;
                 double vCost = (variationMatch['costPrice'] is num) ? (variationMatch['costPrice'] as num).toDouble() : 0.0;
-                
                 if (vPrice > 0) finalPrice = vPrice;
                 if (vCost > 0) finalCost = vCost; 
                 else finalCost = baseCost;
@@ -557,7 +553,117 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
     return total;
   }
 
-  // --- LÓGICA DE DESCONTO NO ITEM ---
+  // --- NOVA LÓGICA DE PAGAMENTO ---
+  
+  void _updatePaymentState(List<Map<String, dynamic>> newHistory) {
+    double totalPaid = newHistory.fold(0.0, (sum, item) => sum + (item['amount'] as num).toDouble());
+    String newStatus = AppConstants.paymentPendente;
+    
+    // Atualiza o status inteligente baseado na soma
+    if (totalPaid >= _localQuote.totalPrice && _localQuote.totalPrice > 0) {
+      newStatus = AppConstants.paymentPago;
+    } else if (totalPaid > 0) {
+      newStatus = AppConstants.paymentParcial;
+    }
+
+    setState(() {
+      _localQuote = _localQuote.copyWith(
+        paymentHistory: newHistory,
+        amountPaid: totalPaid,
+        paymentStatus: newStatus
+      );
+    });
+    _saveChanges(silent: true);
+  }
+
+  void _removePayment(int index) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Remover Pagamento?"),
+        content: const Text("Este pagamento será removido do histórico permanentemente."),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancelar")),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () {
+              Navigator.pop(ctx);
+              List<Map<String, dynamic>> newHistory = List.from(_localQuote.paymentHistory);
+              newHistory.removeAt(index);
+              _updatePaymentState(newHistory);
+            },
+            child: const Text("Remover", style: TextStyle(color: Colors.white)),
+          )
+        ]
+      )
+    );
+  }
+
+  void _showAddPaymentDialog() {
+    final valCtrl = TextEditingController();
+    String selectedMethod = AppConstants.paymentMethods.first;
+
+    double balance = _localQuote.totalPrice - _localQuote.amountPaid;
+    if (balance > 0) {
+      valCtrl.text = balance.toStringAsFixed(2);
+    }
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            return AlertDialog(
+              title: const Text("Registrar Pagamento"),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: valCtrl,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(labelText: "Valor Recebido (R\$)", border: OutlineInputBorder()),
+                  ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    value: selectedMethod,
+                    decoration: const InputDecoration(labelText: "Forma de Pagamento", border: OutlineInputBorder()),
+                    items: AppConstants.paymentMethods.map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
+                    onChanged: (val) {
+                      if (val != null) setStateDialog(() => selectedMethod = val);
+                    },
+                  )
+                ],
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancelar")),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                  onPressed: () {
+                    double val = double.tryParse(valCtrl.text.replaceAll(',', '.')) ?? 0.0;
+                    if (val <= 0) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("O valor deve ser maior que zero.")));
+                      return;
+                    }
+                    Navigator.pop(ctx);
+                    
+                    List<Map<String, dynamic>> newHistory = List.from(_localQuote.paymentHistory);
+                    newHistory.add({
+                      'amount': val,
+                      'method': selectedMethod,
+                      'date': Timestamp.now()
+                    });
+                    _updatePaymentState(newHistory);
+                  },
+                  child: const Text("Salvar Recebimento", style: TextStyle(color: Colors.white))
+                )
+              ]
+            );
+          }
+        );
+      }
+    );
+  }
+
   void _showDiscountDialog(Map<String, dynamic> item, Function() onUpdate) {
     double originalPrice = (item['originalPrice'] ?? item['price'] ?? 0.0).toDouble();
     if (originalPrice == 0) originalPrice = (item['price'] ?? 0.0).toDouble();
@@ -679,7 +785,6 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
     );
   }
 
-  // --- LÓGICA DE DESCONTO GERAL ---
   void _showGeneralDiscountDialog() {
     final valueController = TextEditingController();
     
@@ -731,10 +836,7 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
                 TextButton(
                   onPressed: () {
                     setState(() {
-                      _localQuote = Quote(
-                        id: widget.quoteId, userId: _localQuote.userId, customerId: _localQuote.customerId, status: _localQuote.status, createdAt: _localQuote.createdAt, clientName: _localQuote.clientName, clientPhone: _localQuote.clientPhone, clientCity: _localQuote.clientCity, clientState: _localQuote.clientState,
-                        blanksList: _localQuote.blanksList, cabosList: _localQuote.cabosList, reelSeatsList: _localQuote.reelSeatsList, passadoresList: _localQuote.passadoresList, acessoriosList: _localQuote.acessoriosList,
-                        extraLaborCost: _localQuote.extraLaborCost, totalPrice: _localQuote.totalPrice, customizationText: _localQuote.customizationText, finishedImages: _localQuote.finishedImages,
+                      _localQuote = _localQuote.copyWith(
                         generalDiscount: 0.0,
                         generalDiscountType: 'fixed'
                       );
@@ -751,10 +853,7 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
                     if (selectedMode == 1 && val > 100) val = 100;
 
                     setState(() {
-                      _localQuote = Quote(
-                        id: widget.quoteId, userId: _localQuote.userId, customerId: _localQuote.customerId, status: _localQuote.status, createdAt: _localQuote.createdAt, clientName: _localQuote.clientName, clientPhone: _localQuote.clientPhone, clientCity: _localQuote.clientCity, clientState: _localQuote.clientState,
-                        blanksList: _localQuote.blanksList, cabosList: _localQuote.cabosList, reelSeatsList: _localQuote.reelSeatsList, passadoresList: _localQuote.passadoresList, acessoriosList: _localQuote.acessoriosList,
-                        extraLaborCost: _localQuote.extraLaborCost, totalPrice: _localQuote.totalPrice, customizationText: _localQuote.customizationText, finishedImages: _localQuote.finishedImages,
+                      _localQuote = _localQuote.copyWith(
                         generalDiscount: val,
                         generalDiscountType: selectedMode == 1 ? 'percent' : 'fixed'
                       );
@@ -772,9 +871,6 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
     );
   }
 
-  // --- LÓGICA DE EDITAR CLIENTE (ATUALIZADA) ---
-  
-  // Opção 1: Selecionar um NOVO cliente para este orçamento
   void _selectNewClient() async {
     final CustomerModel? result = await _pickCustomer(context);
     if (result != null) {
@@ -782,18 +878,15 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
     }
   }
 
-  // Opção 2: Editar os DADOS do cliente atual (e salvar no banco)
   void _editCurrentClientData() async {
     CustomerModel? currentCustomer;
     
-    // Tenta buscar o cliente atual pelo ID ou pelo nome
     if (_localQuote.customerId != null && _localQuote.customerId!.isNotEmpty) {
       currentCustomer = await _customerService.getCustomerById(_localQuote.customerId!);
     }
     
-    // Se não achou pelo ID, cria um objeto temporário com os dados do orçamento
     currentCustomer ??= CustomerModel(
-      id: _localQuote.customerId ?? '', // Se for vazio, o form criará um novo
+      id: _localQuote.customerId ?? '', 
       name: _localQuote.clientName,
       phone: _localQuote.clientPhone,
       city: _localQuote.clientCity,
@@ -803,42 +896,23 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
 
     if (!mounted) return;
 
-    // Abre o Dialog do AdminCustomersScreen reutilizado
     showDialog(
       context: context,
       builder: (context) => CustomerFormDialog(
         customer: currentCustomer,
         onSave: (updatedModel) async {
-          // Salva no banco de clientes
           await _customerService.saveCustomer(updatedModel);
           
-          // Atualiza os dados no orçamento local
           setState(() {
-             _localQuote = Quote(
-              id: widget.quoteId, 
-              userId: _localQuote.userId, 
-              customerId: updatedModel.id.isNotEmpty ? updatedModel.id : _localQuote.customerId, 
-              status: _localQuote.status, 
-              createdAt: _localQuote.createdAt,
-              clientName: updatedModel.name,
-              clientPhone: updatedModel.phone,
-              clientCity: updatedModel.city,
-              clientState: updatedModel.state,
-              blanksList: _localQuote.blanksList, 
-              cabosList: _localQuote.cabosList, 
-              reelSeatsList: _localQuote.reelSeatsList, 
-              passadoresList: _localQuote.passadoresList, 
-              acessoriosList: _localQuote.acessoriosList,
-              extraLaborCost: _localQuote.extraLaborCost, 
-              totalPrice: _localQuote.totalPrice, 
-              customizationText: _localQuote.customizationText, 
-              finishedImages: _localQuote.finishedImages,
-              generalDiscount: _localQuote.generalDiscount, 
-              generalDiscountType: _localQuote.generalDiscountType
-            );
+             _localQuote = _localQuote.copyWith(
+               customerId: updatedModel.id.isNotEmpty ? updatedModel.id : _localQuote.customerId,
+               clientName: updatedModel.name,
+               clientPhone: updatedModel.phone,
+               clientCity: updatedModel.city,
+               clientState: updatedModel.state
+             );
           });
           
-          // Salva o orçamento com os novos dados
           await _saveChanges(silent: true);
           Navigator.pop(context);
           ScaffoldMessenger.of(context).showSnackBar(
@@ -851,27 +925,12 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
 
   void _updateClientFromModel(CustomerModel customer) {
     setState(() {
-      _localQuote = Quote(
-        id: widget.quoteId, 
-        userId: _localQuote.userId, 
-        customerId: customer.id, // Atualiza ID do cliente
-        status: _localQuote.status, 
-        createdAt: _localQuote.createdAt,
+      _localQuote = _localQuote.copyWith(
+        customerId: customer.id,
         clientName: customer.name,
         clientPhone: customer.phone,
         clientCity: customer.city,
-        clientState: customer.state,
-        blanksList: _localQuote.blanksList, 
-        cabosList: _localQuote.cabosList, 
-        reelSeatsList: _localQuote.reelSeatsList, 
-        passadoresList: _localQuote.passadoresList, 
-        acessoriosList: _localQuote.acessoriosList,
-        extraLaborCost: _localQuote.extraLaborCost, 
-        totalPrice: _localQuote.totalPrice, 
-        customizationText: _localQuote.customizationText, 
-        finishedImages: _localQuote.finishedImages,
-        generalDiscount: _localQuote.generalDiscount, 
-        generalDiscountType: _localQuote.generalDiscountType
+        clientState: customer.state
       );
     });
     ScaffoldMessenger.of(context).showSnackBar(
@@ -879,7 +938,6 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
     );
   }
 
-  // --- UPLOAD IMAGEM ---
   Future<void> _uploadProductionImage() async {
     final messenger = ScaffoldMessenger.of(context);
     final ImagePicker picker = ImagePicker();
@@ -897,7 +955,12 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
           onProgress: (_) {}
         );
         if (result != null) {
-          if (mounted) setState(() { _localQuote.finishedImages.add(result.downloadUrl); });
+          if (mounted) {
+            setState(() { 
+              List<String> newImages = List.from(_localQuote.finishedImages)..add(result.downloadUrl);
+              _localQuote = _localQuote.copyWith(finishedImages: newImages);
+            });
+          }
           await _saveChanges(silent: true);
         }
       }
@@ -910,7 +973,9 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
 
   Future<void> _deleteProductionImage(int index) async {
     setState(() {
-      _localQuote.finishedImages.removeAt(index);
+      List<String> newImages = List.from(_localQuote.finishedImages);
+      newImages.removeAt(index);
+      _localQuote = _localQuote.copyWith(finishedImages: newImages);
     });
     await _saveChanges(silent: true);
   }
@@ -949,11 +1014,9 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
         await _handleStockChange(_localQuote.status, newStatus);
         if (mounted) {
           setState(() {
-            _localQuote = Quote(
-              id: widget.quoteId, userId: _localQuote.userId, customerId: _localQuote.customerId, status: newStatus, createdAt: _localQuote.createdAt, clientName: _localQuote.clientName, clientPhone: _localQuote.clientPhone, clientCity: _localQuote.clientCity, clientState: _localQuote.clientState,
-              blanksList: _localQuote.blanksList, cabosList: _localQuote.cabosList, reelSeatsList: _localQuote.reelSeatsList, passadoresList: _localQuote.passadoresList, acessoriosList: _localQuote.acessoriosList,
-              extraLaborCost: _localQuote.extraLaborCost, totalPrice: _localQuote.totalPrice, customizationText: _localQuote.customizationText, finishedImages: _localQuote.finishedImages,
-              generalDiscount: _localQuote.generalDiscount, generalDiscountType: _localQuote.generalDiscountType
+            _localQuote = _localQuote.copyWith(
+              status: newStatus,
+              statusUpdatedAt: Timestamp.now(), 
             );
           });
         }
@@ -963,6 +1026,31 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
       } finally {
         if(mounted) setState(() => _isLoading = false);
       }
+    }
+  }
+
+  Future<void> _selectDeliveryDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _localQuote.deliveryDate?.toDate() ?? DateTime.now().add(const Duration(days: 7)),
+      firstDate: DateTime.now().subtract(const Duration(days: 365)),
+      lastDate: DateTime(2030),
+      builder: (context, child) {
+        return Theme(
+          data: ThemeData.light().copyWith(
+            primaryColor: Colors.blueGrey[800],
+            colorScheme: ColorScheme.light(primary: Colors.blueGrey[800]!),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      setState(() {
+        _localQuote = _localQuote.copyWith(deliveryDate: Timestamp.fromDate(picked));
+      });
+      await _saveChanges(silent: true);
     }
   }
 
@@ -998,16 +1086,23 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
     total -= discountVal;
     if (total < 0) total = 0;
 
+    // Atualiza status financeiro caso o total mude (Ex: se apagou uma peça e o valor baixou para o que já foi pago)
+    double currentPaid = _localQuote.amountPaid;
+    String newPayStatus = _localQuote.paymentStatus;
+    
+    if (currentPaid >= total && total > 0) {
+      newPayStatus = AppConstants.paymentPago;
+    } else if (currentPaid > 0) {
+      newPayStatus = AppConstants.paymentParcial;
+    } else {
+      newPayStatus = AppConstants.paymentPendente;
+    }
+
     setState(() {
-      _localQuote = Quote(
-        id: widget.quoteId, userId: _localQuote.userId, customerId: _localQuote.customerId, status: _localQuote.status, createdAt: _localQuote.createdAt,
-        clientName: _localQuote.clientName, clientPhone: _localQuote.clientPhone, clientCity: _localQuote.clientCity, clientState: _localQuote.clientState,
-        blanksList: _localQuote.blanksList, cabosList: _localQuote.cabosList, reelSeatsList: _localQuote.reelSeatsList, passadoresList: _localQuote.passadoresList, acessoriosList: _localQuote.acessoriosList,
-        extraLaborCost: _localQuote.extraLaborCost, totalPrice: total, 
-        customizationText: _customizationController.text, 
-        finishedImages: _localQuote.finishedImages,
-        generalDiscount: _localQuote.generalDiscount,
-        generalDiscountType: _localQuote.generalDiscountType
+      _localQuote = _localQuote.copyWith(
+        totalPrice: total,
+        customizationText: _customizationController.text,
+        paymentStatus: newPayStatus,
       );
     });
   }
@@ -1041,7 +1136,6 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
     final messenger = ScaffoldMessenger.of(context);
     if (!silent) setState(() => _isLoading = true);
     
-    // Garante que o total está sincronizado antes de salvar
     _recalculateTotal();
 
     try {
@@ -1055,10 +1149,21 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
     }
   }
 
+  // BOTÃO ANTIGO: Envia o Orçamento para Fechamento
   Future<void> _shareOnWhatsApp() async {
     final messenger = ScaffoldMessenger.of(context);
     try {
       await WhatsAppService.sendQuoteToClient(_localQuote);
+    } catch (e) {
+      if(mounted) messenger.showSnackBar(SnackBar(content: Text("Erro WhatsApp: $e")));
+    }
+  }
+
+  // --- NOVO BOTÃO: Envia o Resumo de Produção ---
+  Future<void> _shareOrderStatus() async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await WhatsAppService.sendOrderStatusToClient(_localQuote);
     } catch (e) {
       if(mounted) messenger.showSnackBar(SnackBar(content: Text("Erro WhatsApp: $e")));
     }
@@ -1075,16 +1180,204 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
     final category = _sectionCategoryMap[sectionTitle];
     if (category == null) return;
     _showComponentSelector(sectionTitle, category, (newItem) {
-        setState(() {
-          newItem['originalPrice'] = newItem['price'];
-          newItem['discountInfo'] = null;
-          list.add(newItem);
-        });
+        setState(() { newItem['originalPrice'] = newItem['price']; newItem['discountInfo'] = null; list.add(newItem); });
         _recalculateTotal();
     });
   }
 
   // --- WIDGETS ---
+
+  // NOVO WIDGET: Controle Financeiro em Lista (Livro Razão)
+  Widget _buildPaymentControlCard() {
+    double balance = _localQuote.totalPrice - _localQuote.amountPaid;
+    if (balance < 0) balance = 0.0;
+
+    Color badgeColor = Colors.red;
+    String badgeText = "AGUARDANDO PAGTO";
+    if (_localQuote.paymentStatus == AppConstants.paymentPago) {
+      badgeColor = Colors.green; badgeText = "PAGO TOTAL";
+    } else if (_localQuote.paymentStatus == AppConstants.paymentParcial) {
+      badgeColor = Colors.orange[800]!; badgeText = "PAGTO PARCIAL";
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      decoration: BoxDecoration(
+        color: Colors.green[50],
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.green[200]!)
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.payments, size: 20, color: Colors.green[800]),
+                  const SizedBox(width: 8),
+                  Text("CONTROLE DE PAGAMENTOS", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.green[900])),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(color: badgeColor, borderRadius: BorderRadius.circular(8)),
+                child: Text(badgeText, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+              )
+            ],
+          ),
+          const Divider(),
+          
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text("Total do Pedido", style: TextStyle(fontSize: 12, color: Colors.black87)),
+                  Text(_currencyFormat.format(_localQuote.totalPrice), style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 16)),
+                ],
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text("Falta Receber", style: TextStyle(fontSize: 12, color: Colors.black87)),
+                  Text(_currencyFormat.format(balance), style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: balance > 0 ? Colors.red : Colors.green)),
+                ],
+              ),
+            ],
+          ),
+          
+          const SizedBox(height: 16),
+          const Text("Histórico de Recebimentos:", style: TextStyle(color: Colors.black87, fontSize: 12, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          
+          if (_localQuote.paymentHistory.isEmpty)
+            const Text("Nenhum valor recebido até o momento.", style: TextStyle(color: Colors.black87, fontStyle: FontStyle.italic, fontSize: 12))
+          else
+            ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _localQuote.paymentHistory.length,
+              itemBuilder: (context, index) {
+                final pay = _localQuote.paymentHistory[index];
+                final date = (pay['date'] as Timestamp).toDate();
+                final amount = (pay['amount'] as num).toDouble();
+                final method = pay['method'] as String;
+                
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 6),
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.green.shade100)),
+                  child: Row(
+                    children: [
+                      Icon(Icons.check_circle, color: Colors.green[400], size: 16),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(method, style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 13)),
+                            Text(DateFormat('dd/MM/yyyy HH:mm').format(date), style: TextStyle(color: Colors.grey[600], fontSize: 10)),
+                          ],
+                        ),
+                      ),
+                      Text(_currencyFormat.format(amount), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green)),
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline, color: Colors.red, size: 18),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        onPressed: () => _removePayment(index),
+                      )
+                    ],
+                  ),
+                );
+              }
+            ),
+            
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              icon: const Icon(Icons.add),
+              label: const Text("Registrar Novo Recebimento"),
+              style: OutlinedButton.styleFrom(foregroundColor: Colors.green[800], side: BorderSide(color: Colors.green[800]!)),
+              onPressed: _showAddPaymentDialog,
+            ),
+          )
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProductionSettingsCard() {
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      decoration: BoxDecoration(color: Colors.amber[50], borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.amber[200]!)),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.build_circle, size: 20, color: Colors.amber[800]), const SizedBox(width: 8),
+              Text("CONTROLE DE PRODUÇÃO", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.amber[900])),
+            ],
+          ),
+          const Divider(),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text("Prioridade:", style: TextStyle(fontSize: 12, color: Colors.grey[700])),
+                    DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        value: _localQuote.priority, isExpanded: true, icon: const Icon(Icons.arrow_drop_down, size: 20),
+                        items: [
+                          const DropdownMenuItem(value: AppConstants.priorityNormal, child: Text('Normal', style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold))),
+                          DropdownMenuItem(value: AppConstants.priorityAlta, child: Text('Alta', style: TextStyle(color: Colors.orange[800], fontWeight: FontWeight.bold))),
+                          const DropdownMenuItem(value: AppConstants.priorityUrgente, child: Text('Urgente', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold))),
+                        ],
+                        onChanged: (val) {
+                          if (val != null) { setState(() { _localQuote = _localQuote.copyWith(priority: val); }); _saveChanges(silent: true); }
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(width: 1, height: 40, color: Colors.amber[200], margin: const EdgeInsets.symmetric(horizontal: 16)),
+              Expanded(
+                child: InkWell(
+                  onTap: _selectDeliveryDate,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text("Prazo de Entrega:", style: TextStyle(fontSize: 12, color: Colors.grey[700])),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Icon(Icons.calendar_month, size: 16, color: Colors.blueGrey[700]), const SizedBox(width: 8),
+                          Text(
+                            _localQuote.deliveryDate != null ? DateFormat('dd/MM/yyyy').format(_localQuote.deliveryDate!.toDate()) : "Definir",
+                            style: TextStyle(fontWeight: FontWeight.bold, color: _localQuote.deliveryDate != null ? Colors.black87 : Colors.blue),
+                          ),
+                        ],
+                      )
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          )
+        ],
+      ),
+    );
+  }
 
   Widget _buildProductionGallery() {
     return Container(
@@ -1383,11 +1676,9 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              // LINHA DO NOME COM BOTÃO DE EDIÇÃO
                               Row(
                                 children: [
                                   Expanded(child: Text(item['name'] ?? 'Item', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.black87))),
-                                  // BOTÃO DE EDIÇÃO RÁPIDA
                                   IconButton(
                                     icon: const Icon(Icons.edit_note, size: 20, color: Colors.blueGrey),
                                     padding: EdgeInsets.zero,
@@ -1506,6 +1797,15 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
   Widget build(BuildContext context) {
     Color statusColor = _statusColors[_localQuote.status] ?? Colors.grey;
 
+    // Lógica para mostrar o botão de Enviar Andamento
+    bool showStatusShare = [
+      AppConstants.statusAprovado,
+      AppConstants.statusProducao,
+      AppConstants.statusAguardandoEnvio,
+      AppConstants.statusEnviado,
+      AppConstants.statusConcluido,
+    ].contains(_localQuote.status);
+
     return Scaffold(
       backgroundColor: const Color(0xFFF2F4F8),
       appBar: AppBar(
@@ -1525,11 +1825,21 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
             onPressed: _generatePdf,
             tooltip: 'Gerar PDF',
           ),
-          IconButton(
-            icon: const Icon(Icons.share, color: Colors.green),
-            onPressed: _shareOnWhatsApp,
-            tooltip: 'Enviar para Cliente',
-          ),
+          
+          // CONDICIONAL DOS BOTÕES DE WHATSAPP
+          if (showStatusShare)
+            IconButton(
+              icon: const Icon(Icons.assignment_turned_in, color: Colors.indigo),
+              onPressed: _shareOrderStatus,
+              tooltip: 'Enviar Resumo de Produção (WhatsApp)',
+            )
+          else
+            IconButton(
+              icon: const Icon(Icons.share, color: Colors.green),
+              onPressed: _shareOnWhatsApp,
+              tooltip: 'Enviar Orçamento (WhatsApp)',
+            ),
+
           TextButton.icon(
             onPressed: () => _saveChanges(),
             icon: const Icon(Icons.check_circle, color: Colors.blue),
@@ -1556,7 +1866,6 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
                             const SizedBox(width: 8),
                             Expanded(child: Text(_localQuote.clientName.toUpperCase(), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87))),
                             
-                            // --- MENU DE AÇÕES DO CLIENTE ---
                             PopupMenuButton<String>(
                               icon: const Icon(Icons.edit, size: 20, color: Colors.blueGrey),
                               tooltip: 'Opções do Cliente',
@@ -1608,9 +1917,18 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
                         ),
                         const SizedBox(height: 12),
                         Text(DateFormat("'Criado em:' dd/MM/yyyy 'às' HH:mm").format(_localQuote.createdAt.toDate()), style: TextStyle(color: Colors.grey[500], fontSize: 12)),
+                        if (_localQuote.statusUpdatedAt != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text("Status atualizado em: ${DateFormat('dd/MM/yyyy às HH:mm').format(_localQuote.statusUpdatedAt!.toDate())}", style: TextStyle(color: Colors.blueGrey[400], fontSize: 12, fontStyle: FontStyle.italic)),
+                          ),
                       ],
                     ),
                   ),
+
+                  _buildProductionSettingsCard(),
+                  
+                  _buildPaymentControlCard(),
 
                   const SizedBox(height: 10),
 
@@ -1644,13 +1962,8 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
                                 decoration: const InputDecoration(border: InputBorder.none, prefixText: "R\$ "),
                                 onChanged: (val) {
                                   setState(() {
-                                    _localQuote = Quote(
-                                      id: widget.quoteId, userId: _localQuote.userId, customerId: _localQuote.customerId, status: _localQuote.status, createdAt: _localQuote.createdAt, clientName: _localQuote.clientName, clientPhone: _localQuote.clientPhone, clientCity: _localQuote.clientCity, clientState: _localQuote.clientState,
-                                      blanksList: _localQuote.blanksList, cabosList: _localQuote.cabosList, reelSeatsList: _localQuote.reelSeatsList, passadoresList: _localQuote.passadoresList, acessoriosList: _localQuote.acessoriosList,
-                                      extraLaborCost: double.tryParse(val.replaceAll(',', '.')) ?? 0.0,
-                                      totalPrice: _localQuote.totalPrice, customizationText: _localQuote.customizationText, 
-                                      finishedImages: _localQuote.finishedImages,
-                                      generalDiscount: _localQuote.generalDiscount, generalDiscountType: _localQuote.generalDiscountType
+                                    _localQuote = _localQuote.copyWith(
+                                      extraLaborCost: double.tryParse(val.replaceAll(',', '.')) ?? 0.0
                                     );
                                   });
                                   _recalculateTotal();
@@ -1707,7 +2020,6 @@ class _AdminQuoteDetailScreenState extends State<AdminQuoteDetailScreen> {
     );
   }
 }
-
 class ComponentSelectorModal extends StatefulWidget {
   final String title;
   final String category;

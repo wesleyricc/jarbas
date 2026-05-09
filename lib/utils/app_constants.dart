@@ -8,14 +8,13 @@ class AppConstants {
   static const String colKits = 'kits';
   static const String colSettings = 'settings';
 
-  // --- CATEGORIAS DE COMPONENTES (Chaves no Banco) ---
+  // --- CATEGORIAS DE COMPONENTES ---
   static const String catBlank = 'blank';
   static const String catCabo = 'cabo';
   static const String catReelSeat = 'reel_seat';
   static const String catPassadores = 'passadores';
   static const String catAcessorios = 'acessorios';
 
-  // --- MAPA DE RÓTULOS (Para UI - Exibição) ---
   static const Map<String, String> categoryLabels = {
     catBlank: 'Blanks',
     catCabo: 'Cabos',
@@ -24,32 +23,55 @@ class AppConstants {
     catAcessorios: 'Acessórios',
   };
 
-  // --- STATUS DE ORÇAMENTO (Chaves no Banco) ---
+  // --- STATUS DE ORÇAMENTO ---
   static const String statusRascunho = 'rascunho';
   static const String statusPendente = 'pendente';
-  static const String statusAprovado = 'aprovado';
-  static const String statusProducao = 'producao';
-  static const String statusConcluido = 'concluido';
-  static const String statusEnviado = 'enviado';
+  static const String statusOrcado = 'orcado'; 
+  static const String statusAprovado = 'aprovado'; 
+  static const String statusProducao = 'producao'; 
+  static const String statusAguardandoEnvio = 'aguardando_envio'; 
+  static const String statusEnviado = 'enviado'; 
+  static const String statusConcluido = 'concluido'; 
   static const String statusCancelado = 'cancelado';
 
-  // --- MAPA DE CORES DE STATUS (Para UI) ---
+  // --- MAPA DE CORES DE STATUS ---
   static const Map<String, Color> statusColors = {
     statusRascunho: Colors.grey,
     statusPendente: Colors.orange,
+    statusOrcado: Colors.amber, 
     statusAprovado: Colors.blue,
     statusProducao: Colors.purple,
-    statusConcluido: Colors.green,
+    statusAguardandoEnvio: Colors.indigo,
     statusEnviado: Colors.teal,
+    statusConcluido: Colors.green,
     statusCancelado: Colors.red,
   };
+
+  // --- PRIORIDADES DE PRODUÇÃO ---
+  static const String priorityNormal = 'normal';
+  static const String priorityAlta = 'alta';
+  static const String priorityUrgente = 'urgente';
+
+  // --- STATUS DE PAGAMENTO ---
+  static const String paymentPendente = 'pendente';
+  static const String paymentParcial = 'parcial';
+  static const String paymentPago = 'pago';
+
+  // --- MÉTODOS DE PAGAMENTO (NOVO) ---
+  static const List<String> paymentMethods = [
+    'Pix', 
+    'Cartão de Crédito', 
+    'Cartão de Débito', 
+    'Dinheiro', 
+    'Transferência', 
+    'Boleto'
+  ];
 
   // --- PERFIS DE USUÁRIO (Roles) ---
   static const String roleCliente = 'cliente';
   static const String roleFabricante = 'fabricante';
   static const String roleLojista = 'lojista';
 
-  // Verifica se é admin
   static bool isAdmin(String role) {
     return role == roleFabricante || role == roleLojista;
   }

@@ -1,14 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/foundation.dart'; // Para kIsWeb
+import 'package:flutter/foundation.dart'; 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:url_launcher/url_launcher.dart'; // Necessário para abrir o WhatsApp
+import 'package:url_launcher/url_launcher.dart'; 
 import '../models/quote_model.dart';
 import '../utils/app_constants.dart';
 import 'admin_quote_detail_screen.dart';
 import 'rod_builder_screen.dart';
-
-
 
 class AdminQuotesScreen extends StatefulWidget {
   const AdminQuotesScreen({super.key});
@@ -24,10 +22,11 @@ class _AdminQuotesScreenState extends State<AdminQuotesScreen> {
   String _searchQuery = "";
   String _statusFilter = 'todos';
 
-  // O status 'enviado' NÃO desconta estoque (igual pendente/rascunho)
   final Set<String> _statusesThatDeductStock = {
     AppConstants.statusAprovado,
     AppConstants.statusProducao,
+    AppConstants.statusAguardandoEnvio,
+    AppConstants.statusEnviado,
     AppConstants.statusConcluido,
   };
 
@@ -47,24 +46,22 @@ class _AdminQuotesScreenState extends State<AdminQuotesScreen> {
     super.dispose();
   }
 
-  void _openQuoteDetail(Quote quote, String id) {
+  void _openQuoteDetail(Quote quote) {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (c) => AdminQuoteDetailScreen(quote: quote, quoteId: id)),
+      MaterialPageRoute(builder: (c) => AdminQuoteDetailScreen(quote: quote, quoteId: quote.id!)),
     );
   }
 
   void _createNewQuote() {
     Navigator.push(
       context, 
-      MaterialPageRoute(builder: (context) => RodBuilderScreen()));
+      MaterialPageRoute(builder: (context) => const RodBuilderScreen()));
   }
 
-  // --- ABRIR WHATSAPP DO CLIENTE ---
   Future<void> _openClientWhatsApp(String phone) async {
     if (phone.isEmpty) return;
 
-    // Limpa o número
     String cleanPhone = phone.replaceAll(RegExp(r'[^\d]+'), '');
     if (cleanPhone.length >= 10 && !cleanPhone.startsWith('55')) {
       cleanPhone = '55$cleanPhone';
@@ -88,7 +85,7 @@ class _AdminQuotesScreenState extends State<AdminQuotesScreen> {
     }
   }
 
-  Future<void> _deleteQuoteWithStockReturn(String quoteId, Map<String, dynamic> quoteData) async {
+  Future<void> _deleteQuoteWithStockReturn(Quote quote) async {
     bool confirm = await showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -105,13 +102,13 @@ class _AdminQuotesScreenState extends State<AdminQuotesScreen> {
 
     try {
       final db = FirebaseFirestore.instance;
-      String status = quoteData['status'] ?? '';
+      String status = quote.status;
 
       if (_statusesThatDeductStock.contains(status)) {
-        await _processStockReturn(db, quoteData);
+        await _processStockReturn(db, quote);
       }
 
-      await db.collection(AppConstants.colQuotes).doc(quoteId).delete();
+      await db.collection(AppConstants.colQuotes).doc(quote.id).delete();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Orçamento excluído.")));
@@ -123,13 +120,13 @@ class _AdminQuotesScreenState extends State<AdminQuotesScreen> {
     }
   }
 
-  Future<void> _processStockReturn(FirebaseFirestore db, Map<String, dynamic> data) async {
-    List<dynamic> allItems = [];
-    allItems.addAll(data['blanksList'] ?? []);
-    allItems.addAll(data['cabosList'] ?? []);
-    allItems.addAll(data['reelSeatsList'] ?? []);
-    allItems.addAll(data['passadoresList'] ?? []);
-    allItems.addAll(data['acessoriosList'] ?? []);
+  Future<void> _processStockReturn(FirebaseFirestore db, Quote quote) async {
+    List<Map<String, dynamic>> allItems = [];
+    allItems.addAll(quote.blanksList);
+    allItems.addAll(quote.cabosList);
+    allItems.addAll(quote.reelSeatsList);
+    allItems.addAll(quote.passadoresList);
+    allItems.addAll(quote.acessoriosList);
 
     for (var item in allItems) {
       String? componentId = item['id'];
@@ -276,12 +273,15 @@ class _AdminQuotesScreenState extends State<AdminQuotesScreen> {
                         const SizedBox(width: 8),
                         _buildFilterChip(AppConstants.statusPendente, 'Pendentes', Colors.orange),
                         const SizedBox(width: 8),
-                        // NOVO FILTRO ENVIADO
-                        _buildFilterChip(AppConstants.statusEnviado, 'Enviados', Colors.cyan),
+                        _buildFilterChip(AppConstants.statusOrcado, 'Orçados', Colors.amber),
                         const SizedBox(width: 8),
-                        _buildFilterChip(AppConstants.statusAprovado, 'Aprovados', Colors.blue),
+                        _buildFilterChip(AppConstants.statusAprovado, 'Fila de Espera', Colors.blue),
                         const SizedBox(width: 8),
-                        _buildFilterChip(AppConstants.statusProducao, 'Produção', Colors.purple),
+                        _buildFilterChip(AppConstants.statusProducao, 'Em Produção', Colors.purple),
+                        const SizedBox(width: 8),
+                        _buildFilterChip(AppConstants.statusAguardandoEnvio, 'Aguard. Envio', Colors.indigo),
+                        const SizedBox(width: 8),
+                        _buildFilterChip(AppConstants.statusEnviado, 'Enviados', Colors.teal),
                         const SizedBox(width: 8),
                         _buildFilterChip(AppConstants.statusConcluido, 'Concluídos', Colors.green),
                         const SizedBox(width: 8),
@@ -295,10 +295,7 @@ class _AdminQuotesScreenState extends State<AdminQuotesScreen> {
             
             Expanded(
               child: StreamBuilder<QuerySnapshot>(
-                stream: FirebaseFirestore.instance
-                    .collection(AppConstants.colQuotes)
-                    .orderBy('createdAt', descending: true)
-                    .snapshots(),
+                stream: FirebaseFirestore.instance.collection(AppConstants.colQuotes).snapshots(),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Center(child: CircularProgressIndicator());
@@ -307,48 +304,137 @@ class _AdminQuotesScreenState extends State<AdminQuotesScreen> {
                     return const Center(child: Text("Nenhum orçamento encontrado."));
                   }
 
-                  final docs = snapshot.data!.docs.where((doc) {
-                    final quote = Quote.fromFirestore(doc);
-                    
-                    if (_statusFilter != 'todos' && quote.status != _statusFilter) {
-                      return false;
-                    }
+                  List<Quote> quotesList = snapshot.data!.docs.map((doc) => Quote.fromFirestore(doc)).toList();
 
+                  quotesList = quotesList.where((quote) {
+                    if (_statusFilter != 'todos' && quote.status != _statusFilter) return false;
                     if (_searchQuery.isNotEmpty) {
                       bool matchName = quote.clientName.toLowerCase().contains(_searchQuery);
                       bool matchComponent = _quoteContainsComponent(quote, _searchQuery);
                       return matchName || matchComponent;
                     }
-
                     return true;
                   }).toList();
 
-                  if (docs.isEmpty) {
+                  // ORDENAÇÃO CUSTOMIZADA
+                  quotesList.sort((a, b) {
+                    final group1 = [AppConstants.statusRascunho, AppConstants.statusPendente, AppConstants.statusOrcado];
+                    final group2 = [AppConstants.statusAprovado, AppConstants.statusProducao, AppConstants.statusAguardandoEnvio, AppConstants.statusEnviado, AppConstants.statusConcluido];
+
+                    bool aInGroup1 = group1.contains(a.status);
+                    bool bInGroup1 = group1.contains(b.status);
+                    bool aInGroup2 = group2.contains(a.status);
+                    bool bInGroup2 = group2.contains(b.status);
+
+                    int weightA = aInGroup1 ? 1 : (aInGroup2 ? 2 : 3);
+                    int weightB = bInGroup1 ? 1 : (bInGroup2 ? 2 : 3);
+
+                    if (weightA != weightB) return weightA.compareTo(weightB);
+
+                    if (aInGroup1 && bInGroup1) {
+                      DateTime dateA = a.statusUpdatedAt?.toDate() ?? a.createdAt.toDate();
+                      DateTime dateB = b.statusUpdatedAt?.toDate() ?? b.createdAt.toDate();
+                      return dateB.compareTo(dateA); 
+                    } 
+                    else if (aInGroup2 && bInGroup2) {
+                      if (a.deliveryDate != null && b.deliveryDate != null) {
+                        return a.deliveryDate!.compareTo(b.deliveryDate!); 
+                      } else if (a.deliveryDate != null) {
+                        return -1; 
+                      } else if (b.deliveryDate != null) {
+                        return 1;
+                      } else {
+                        DateTime dateA = a.statusUpdatedAt?.toDate() ?? a.createdAt.toDate();
+                        DateTime dateB = b.statusUpdatedAt?.toDate() ?? b.createdAt.toDate();
+                        return dateB.compareTo(dateA);
+                      }
+                    } 
+                    else {
+                      DateTime dateA = a.statusUpdatedAt?.toDate() ?? a.createdAt.toDate();
+                      DateTime dateB = b.statusUpdatedAt?.toDate() ?? b.createdAt.toDate();
+                      return dateB.compareTo(dateA);
+                    }
+                  });
+
+                  if (quotesList.isEmpty) {
                     return const Center(child: Text("Nenhum resultado para a busca."));
                   }
 
                   return ListView.separated(
                     padding: const EdgeInsets.all(16),
-                    itemCount: docs.length,
+                    itemCount: quotesList.length,
                     separatorBuilder: (_, __) => const SizedBox(height: 12),
                     itemBuilder: (context, index) {
-                      final doc = docs[index];
-                      final data = doc.data() as Map<String, dynamic>;
-                      final quote = Quote.fromFirestore(doc);
+                      final quote = quotesList[index];
                       
-                      Color statusColor = Colors.grey;
-                      if (quote.status == AppConstants.statusPendente) statusColor = Colors.orange;
-                      if (quote.status == AppConstants.statusEnviado) statusColor = Colors.cyan; // COR DO STATUS NOVO
-                      if (quote.status == AppConstants.statusAprovado) statusColor = Colors.blue;
-                      if (quote.status == AppConstants.statusProducao) statusColor = Colors.purple;
-                      if (quote.status == AppConstants.statusConcluido) statusColor = Colors.green;
-                      if (quote.status == AppConstants.statusCancelado) statusColor = Colors.red;
+                      Color statusColor = AppConstants.statusColors[quote.status] ?? Colors.grey;
+
+                      final statusDateStr = DateFormat("dd/MM/yyyy").format((quote.statusUpdatedAt ?? quote.createdAt).toDate());
+                      
+                      bool showProductionInfo = [
+                        AppConstants.statusOrcado,
+                        AppConstants.statusAprovado,
+                        AppConstants.statusProducao,
+                        AppConstants.statusAguardandoEnvio,
+                        AppConstants.statusEnviado,
+                      ].contains(quote.status);
+
+                      Color priorityColor = Colors.grey;
+                      String priorityText = "NORMAL";
+                      if (quote.priority == AppConstants.priorityAlta) {
+                        priorityColor = Colors.orange;
+                        priorityText = "ALTA";
+                      } else if (quote.priority == AppConstants.priorityUrgente) {
+                        priorityColor = Colors.red;
+                        priorityText = "URGENTE";
+                      }
+
+                      // --- LÓGICA DE ATRASO (NOVO) ---
+                      String deliveryDateStr = "Não definido";
+                      Color deliveryColor = Colors.black87;
+                      IconData deliveryIcon = Icons.calendar_month;
+
+                      if (quote.deliveryDate != null) {
+                        final now = DateTime.now();
+                        final today = DateTime(now.year, now.month, now.day);
+                        final delDate = quote.deliveryDate!.toDate();
+                        final delDateOnly = DateTime(delDate.year, delDate.month, delDate.day);
+                        final diff = delDateOnly.difference(today).inDays;
+
+                        // Se estiver concluído ou enviado, não mostra alerta de atraso
+                        if (quote.status == AppConstants.statusConcluido || quote.status == AppConstants.statusEnviado) {
+                           deliveryDateStr = DateFormat('dd/MM/yyyy').format(delDate);
+                           deliveryColor = Colors.grey[700]!;
+                        } else {
+                          if (diff < 0) {
+                            deliveryDateStr = "ATRASADO (${diff.abs()} dias)";
+                            deliveryColor = Colors.red;
+                            deliveryIcon = Icons.warning_rounded;
+                          } else if (diff == 0) {
+                            deliveryDateStr = "ENTREGAR HOJE";
+                            deliveryColor = Colors.orange[800]!;
+                            deliveryIcon = Icons.notification_important;
+                          } else if (diff == 1) {
+                            deliveryDateStr = "ENTREGAR AMANHÃ";
+                            deliveryColor = Colors.orange[800]!;
+                          } else {
+                            deliveryDateStr = DateFormat('dd/MM/yyyy').format(delDate);
+                            deliveryColor = Colors.black87;
+                          }
+                        }
+                      }
 
                       return Card(
                         elevation: 2,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          side: BorderSide(
+                            color: deliveryColor == Colors.red ? Colors.red.withOpacity(0.5) : Colors.transparent,
+                            width: deliveryColor == Colors.red ? 2 : 0
+                          )
+                        ),
                         child: InkWell(
-                          onTap: () => _openQuoteDetail(quote, doc.id),
+                          onTap: () => _openQuoteDetail(quote),
                           borderRadius: BorderRadius.circular(12),
                           child: Padding(
                             padding: const EdgeInsets.all(16),
@@ -371,10 +457,15 @@ class _AdminQuotesScreenState extends State<AdminQuotesScreen> {
                                       ),
                                     ),
                                     Text(
-                                      DateFormat("dd/MM/yyyy").format(quote.createdAt.toDate()),
-                                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                                      "Criado: ${DateFormat("dd/MM/yyyy").format(quote.createdAt.toDate())}",
+                                      style: TextStyle(fontSize: 11, color: Colors.grey[500]),
                                     ),
                                   ],
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  "Neste status desde: $statusDateStr",
+                                  style: TextStyle(fontSize: 11, color: Colors.blueGrey[400], fontStyle: FontStyle.italic),
                                 ),
                                 const SizedBox(height: 12),
                                 Text(quote.clientName, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
@@ -390,6 +481,27 @@ class _AdminQuotesScreenState extends State<AdminQuotesScreen> {
                                     Text("${quote.clientCity} - ${quote.clientState}", style: TextStyle(fontSize: 13, color: Colors.grey[800])),
                                   ],
                                 ),
+                                
+                                if (showProductionInfo) ...[
+                                  const Divider(height: 12),
+                                  Row(
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(color: priorityColor.withOpacity(0.1), borderRadius: BorderRadius.circular(4), border: Border.all(color: priorityColor.withOpacity(0.3))),
+                                        child: Text("PRIORIDADE: $priorityText", style: TextStyle(color: priorityColor, fontSize: 9, fontWeight: FontWeight.bold)),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Icon(deliveryIcon, size: 14, color: deliveryColor),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        "Prazo: $deliveryDateStr",
+                                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: deliveryColor)
+                                      )
+                                    ],
+                                  ),
+                                ],
+
                                 const Divider(height: 12),
                                 
                                 const Text("Resumo do Pedido:", style: TextStyle(fontSize: 11, color: Colors.grey)),
@@ -406,7 +518,6 @@ class _AdminQuotesScreenState extends State<AdminQuotesScreen> {
                                       ),
                                     ),
                                     
-                                    // BOTÃO WHATSAPP
                                     IconButton(
                                       icon: const Icon(Icons.chat, color: Colors.green),
                                       onPressed: () => _openClientWhatsApp(quote.clientPhone),
@@ -414,10 +525,9 @@ class _AdminQuotesScreenState extends State<AdminQuotesScreen> {
                                       visualDensity: VisualDensity.compact,
                                     ),
                                     
-                                    // BOTÃO EXCLUIR
                                     IconButton(
                                       icon: const Icon(Icons.delete_outline, color: Colors.red),
-                                      onPressed: () => _deleteQuoteWithStockReturn(doc.id, data),
+                                      onPressed: () => _deleteQuoteWithStockReturn(quote),
                                       visualDensity: VisualDensity.compact,
                                     ),
                                   ],
